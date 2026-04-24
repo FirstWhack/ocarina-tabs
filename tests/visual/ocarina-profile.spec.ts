@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
+  analyzeMidiRangeFit,
   analyzeMidiNotes,
   findPlayableTranspositions,
   getFingeringForMidiNote,
@@ -53,6 +54,27 @@ test('transposition suggestions prefer the smallest playable shift', () => {
   expect(lowMelodySuggestions[0]?.semitones).toBe(1)
   expect(highMelodySuggestions[0]?.semitones).toBe(-1)
   expect(alreadyPlayableSuggestions[0]?.semitones).toBe(0)
+})
+
+test('range fit treats transposable notes as playable for tab generation', () => {
+  const analysis = analyzeMidiRangeFit(profile, [67, 69, 72])
+
+  expect(analysis.status).toBe('transposable')
+  expect(analysis.bestTransposition?.semitones).toBe(2)
+  expect(analysis.unsupportedMidiNotes).toEqual([])
+  expect(analysis.sourceRange).toEqual({
+    lowestMidiNote: 67,
+    highestMidiNote: 72,
+    spanSemitones: 5,
+  })
+})
+
+test('range fit reports unsupported notes when no transposition can fit', () => {
+  const analysis = analyzeMidiRangeFit(profile, [48, 72, 96])
+
+  expect(analysis.status).toBe('unplayable')
+  expect(analysis.bestTransposition).toBeUndefined()
+  expect(analysis.unsupportedMidiNotes).toEqual([48, 96])
 })
 
 test('upper natural notes keep the left pinky anchor until high F', () => {

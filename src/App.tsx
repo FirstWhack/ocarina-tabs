@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { OcarinaDiagram } from './components/OcarinaDiagram/OcarinaDiagram'
 import {
-  analyzeMidiNotes,
-  findPlayableTranspositions,
+  analyzeMidiRangeFit,
   getFingeringForMidiNote,
   getPlayableRange,
   standard12HoleCOcarinaProfile,
@@ -11,22 +10,16 @@ import './App.css'
 
 const profile = standard12HoleCOcarinaProfile
 const initialMidiNote = 72
-const unsupportedDemoMidiNotes = [67, 69, 72, 90] as const
-const transpositionDemoMidiNotes = [67, 69, 72] as const
+const incomingMidiPreviewNotes = [67, 69, 72] as const
 
 function App() {
   const [activeMidiNote, setActiveMidiNote] = useState(initialMidiNote)
   const activeFingering = getFingeringForMidiNote(profile, activeMidiNote)
   const playableRange = getPlayableRange(profile)
-  const unsupportedDemo = useMemo(
-    () => analyzeMidiNotes(profile, unsupportedDemoMidiNotes),
+  const midiRangeFit = useMemo(
+    () => analyzeMidiRangeFit(profile, incomingMidiPreviewNotes),
     [],
   )
-  const transpositionSuggestions = useMemo(
-    () => findPlayableTranspositions(profile, transpositionDemoMidiNotes),
-    [],
-  )
-  const bestTransposition = transpositionSuggestions[0]
 
   return (
     <main className="app-shell">
@@ -94,26 +87,46 @@ function App() {
 
         <section className="midi-readiness" aria-label="MIDI readiness preview">
           <div className="status-panel">
-            <span>Unsupported note preview</span>
-            <strong>
-              {unsupportedDemo.unsupportedMidiNotes
-                .map((midiNote) => `MIDI ${midiNote}`)
-                .join(', ')}
-            </strong>
+            <span>Incoming MIDI range</span>
+            <strong>{formatMidiRangeFit(midiRangeFit)}</strong>
           </div>
 
           <div className="status-panel">
-            <span>First playable transposition</span>
-            <strong>
-              {bestTransposition
-                ? formatSemitoneShift(bestTransposition.semitones)
-                : 'No playable shift'}
-            </strong>
+            <span>Tab generation path</span>
+            <strong>{formatTabGenerationPath(midiRangeFit)}</strong>
           </div>
         </section>
       </section>
     </main>
   )
+}
+
+type MidiRangeFit = ReturnType<typeof analyzeMidiRangeFit>
+
+function formatMidiRangeFit(midiRangeFit: MidiRangeFit) {
+  const sourceRange = midiRangeFit.sourceRange
+
+  if (!sourceRange) {
+    return 'No notes found'
+  }
+
+  return `MIDI ${sourceRange.lowestMidiNote}-${sourceRange.highestMidiNote}, ${sourceRange.spanSemitones} semitones`
+}
+
+function formatTabGenerationPath(midiRangeFit: MidiRangeFit) {
+  if (midiRangeFit.status === 'direct') {
+    return 'Playable without transposition'
+  }
+
+  if (midiRangeFit.bestTransposition) {
+    return `Playable at ${formatSemitoneShift(
+      midiRangeFit.bestTransposition.semitones,
+    )}`
+  }
+
+  return `Unsupported: ${midiRangeFit.unsupportedMidiNotes
+    .map((midiNote) => `MIDI ${midiNote}`)
+    .join(', ')}`
 }
 
 function formatSemitoneShift(semitones: number) {

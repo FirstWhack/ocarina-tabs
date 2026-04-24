@@ -34,6 +34,24 @@ export type PlayableTransposition = {
   analysis: MidiNoteAnalysis
 }
 
+export type MidiNoteRange = {
+  lowestMidiNote: number
+  highestMidiNote: number
+  spanSemitones: number
+}
+
+export type MidiRangeFitStatus = 'direct' | 'transposable' | 'unplayable'
+
+export type MidiRangeFitAnalysis = {
+  status: MidiRangeFitStatus
+  playableRange: PlayableRange
+  sourceRange: MidiNoteRange | undefined
+  sourceAnalysis: MidiNoteAnalysis
+  playableTranspositions: readonly PlayableTransposition[]
+  bestTransposition: PlayableTransposition | undefined
+  unsupportedMidiNotes: readonly number[]
+}
+
 const thumbHoles = [
   'left-thumb',
   'right-thumb',
@@ -283,6 +301,57 @@ export function findPlayableTranspositions(
 
     return analysis.playable ? [{ semitones, analysis }] : []
   })
+}
+
+export function analyzeMidiRangeFit(
+  profile: OcarinaProfile,
+  midiNotes: readonly number[],
+  options: {
+    minSemitones?: number
+    maxSemitones?: number
+  } = {},
+): MidiRangeFitAnalysis {
+  const sourceAnalysis = analyzeMidiNotes(profile, midiNotes)
+  const playableTranspositions = findPlayableTranspositions(
+    profile,
+    midiNotes,
+    options,
+  )
+  const bestTransposition = playableTranspositions[0]
+  const status = sourceAnalysis.playable
+    ? 'direct'
+    : bestTransposition
+      ? 'transposable'
+      : 'unplayable'
+
+  return {
+    status,
+    playableRange: sourceAnalysis.playableRange,
+    sourceRange: getMidiNoteRange(midiNotes),
+    sourceAnalysis,
+    playableTranspositions,
+    bestTransposition,
+    unsupportedMidiNotes: bestTransposition
+      ? []
+      : sourceAnalysis.unsupportedMidiNotes,
+  }
+}
+
+function getMidiNoteRange(
+  midiNotes: readonly number[],
+): MidiNoteRange | undefined {
+  if (midiNotes.length === 0) {
+    return undefined
+  }
+
+  const lowestMidiNote = Math.min(...midiNotes)
+  const highestMidiNote = Math.max(...midiNotes)
+
+  return {
+    lowestMidiNote,
+    highestMidiNote,
+    spanSemitones: highestMidiNote - lowestMidiNote,
+  }
 }
 
 function getTranspositionCandidates(
