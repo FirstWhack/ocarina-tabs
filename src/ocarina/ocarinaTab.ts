@@ -16,6 +16,7 @@ export type OcarinaTabStep = {
   index: number
   sourceMidiNote: number
   midiNote: number
+  velocity: number
   startTick: number
   durationTicks: number
   startMs: number
@@ -79,6 +80,7 @@ export function createOcarinaTab(
       index,
       sourceMidiNote: note.midiNote,
       midiNote,
+      velocity: note.velocity,
       startTick: note.startTick,
       durationTicks: note.durationTicks,
       startMs: note.startMs,

@@ -3,6 +3,7 @@ import {
   analyzeMidiRangeFit,
   analyzeMidiNotes,
   findPlayableTranspositions,
+  findCompatibleTranspositions,
   getFingeringForMidiNote,
   getPlayableRange,
   standard12HoleCOcarinaProfile,
@@ -74,7 +75,17 @@ test('range fit reports unsupported notes when no transposition can fit', () => 
 
   expect(analysis.status).toBe('unplayable')
   expect(analysis.bestTransposition).toBeUndefined()
+  expect(analysis.bestCompatibleTransposition?.semitones).toBe(0)
+  expect(analysis.bestCompatibleTransposition?.playableNoteCount).toBe(1)
   expect(analysis.unsupportedMidiNotes).toEqual([48, 96])
+})
+
+test('compatible transpositions return the best partial fit', () => {
+  const suggestions = findCompatibleTranspositions(profile, [60, 72, 84, 96])
+
+  expect(suggestions[0]?.semitones).toBe(0)
+  expect(suggestions[0]?.playableNoteCount).toBe(2)
+  expect(suggestions[0]?.unsupportedNoteCount).toBe(2)
 })
 
 test('upper natural notes keep the left pinky anchor until high F', () => {

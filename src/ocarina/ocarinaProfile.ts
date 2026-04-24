@@ -32,7 +32,12 @@ export type MidiNoteAnalysis = {
 export type PlayableTransposition = {
   semitones: number
   analysis: MidiNoteAnalysis
+  playableNoteCount: number
+  unsupportedNoteCount: number
+  playableRatio: number
 }
+
+export type CompatibleTransposition = PlayableTransposition
 
 export type MidiNoteRange = {
   lowestMidiNote: number
@@ -47,8 +52,10 @@ export type MidiRangeFitAnalysis = {
   playableRange: PlayableRange
   sourceRange: MidiNoteRange | undefined
   sourceAnalysis: MidiNoteAnalysis
+  compatibleTranspositions: readonly CompatibleTransposition[]
   playableTranspositions: readonly PlayableTransposition[]
   bestTransposition: PlayableTransposition | undefined
+  bestCompatibleTransposition: CompatibleTransposition | undefined
   unsupportedMidiNotes: readonly number[]
 }
 
@@ -293,14 +300,53 @@ export function findPlayableTranspositions(
 ): readonly PlayableTransposition[] {
   const minSemitones = options.minSemitones ?? -24
   const maxSemitones = options.maxSemitones ?? 24
+
+  return findCompatibleTranspositions(profile, midiNotes, {
+    minSemitones,
+    maxSemitones,
+  }).filter((candidate) => candidate.analysis.playable)
+}
+
+export function findCompatibleTranspositions(
+  profile: OcarinaProfile,
+  midiNotes: readonly number[],
+  options: {
+    minSemitones?: number
+    maxSemitones?: number
+  } = {},
+): readonly CompatibleTransposition[] {
+  const minSemitones = options.minSemitones ?? -24
+  const maxSemitones = options.maxSemitones ?? 24
   const candidates = getTranspositionCandidates(minSemitones, maxSemitones)
 
-  return candidates.flatMap((semitones) => {
+  return candidates
+    .map((semitones, order) => {
     const transposedNotes = midiNotes.map((midiNote) => midiNote + semitones)
     const analysis = analyzeMidiNotes(profile, transposedNotes)
+      const unsupportedNoteCount = analysis.notes.filter(
+        (note) => !note.fingering,
+      ).length
+      const playableNoteCount = analysis.notes.length - unsupportedNoteCount
 
-    return analysis.playable ? [{ semitones, analysis }] : []
-  })
+      return {
+        semitones,
+        analysis,
+        playableNoteCount,
+        unsupportedNoteCount,
+        playableRatio:
+          analysis.notes.length === 0
+            ? 0
+            : playableNoteCount / analysis.notes.length,
+        order,
+      }
+    })
+    .sort(
+      (left, right) =>
+        right.playableRatio - left.playableRatio ||
+        left.unsupportedNoteCount - right.unsupportedNoteCount ||
+        Math.abs(left.semitones) - Math.abs(right.semitones) ||
+        left.order - right.order,
+    )
 }
 
 export function analyzeMidiRangeFit(
@@ -312,12 +358,16 @@ export function analyzeMidiRangeFit(
   } = {},
 ): MidiRangeFitAnalysis {
   const sourceAnalysis = analyzeMidiNotes(profile, midiNotes)
-  const playableTranspositions = findPlayableTranspositions(
+  const compatibleTranspositions = findCompatibleTranspositions(
     profile,
     midiNotes,
     options,
   )
+  const playableTranspositions = compatibleTranspositions.filter(
+    (candidate) => candidate.analysis.playable,
+  )
   const bestTransposition = playableTranspositions[0]
+  const bestCompatibleTransposition = compatibleTranspositions[0]
   const status = sourceAnalysis.playable
     ? 'direct'
     : bestTransposition
@@ -329,8 +379,10 @@ export function analyzeMidiRangeFit(
     playableRange: sourceAnalysis.playableRange,
     sourceRange: getMidiNoteRange(midiNotes),
     sourceAnalysis,
+    compatibleTranspositions,
     playableTranspositions,
     bestTransposition,
+    bestCompatibleTransposition,
     unsupportedMidiNotes: bestTransposition
       ? []
       : sourceAnalysis.unsupportedMidiNotes,
