@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { OcarinaDiagram } from './components/OcarinaDiagram/OcarinaDiagram'
 import {
   analyzeMidiRangeFit,
@@ -6,37 +7,244 @@ import {
   getPlayableRange,
   standard12HoleCOcarinaProfile,
 } from './ocarina/ocarinaProfile'
+import { createOcarinaTab } from './ocarina/ocarinaTab'
+import type { OcarinaTabStep } from './ocarina/ocarinaTab'
+import { parseMidiFile } from './midi/midiParser'
+import type { ParsedMidiFile } from './midi/midiParser'
+import { createTwinkleOcarinaMidiFile } from './midi/sampleMidi'
 import './App.css'
 
 const profile = standard12HoleCOcarinaProfile
 const initialMidiNote = 72
-const incomingMidiPreviewNotes = [67, 69, 72] as const
+const sampleMidiName = 'Twinkle C5 phrase.mid'
 
 function App() {
   const [activeMidiNote, setActiveMidiNote] = useState(initialMidiNote)
+  const [activeTabIndex, setActiveTabIndex] = useState<number | undefined>()
+  const [parsedMidi, setParsedMidi] = useState<ParsedMidiFile>(() =>
+    parseMidiFile(createTwinkleOcarinaMidiFile()),
+  )
+  const [midiFileName, setMidiFileName] = useState(sampleMidiName)
+  const [midiError, setMidiError] = useState<string | undefined>()
+  const [isPlaying, setIsPlaying] = useState(false)
+  const playbackTimeoutsRef = useRef<number[]>([])
+  const oscillatorsRef = useRef<OscillatorNode[]>([])
+  const audioContextRef = useRef<AudioContext | undefined>(undefined)
+
   const activeFingering = getFingeringForMidiNote(profile, activeMidiNote)
   const playableRange = getPlayableRange(profile)
-  const midiRangeFit = useMemo(
-    () => analyzeMidiRangeFit(profile, incomingMidiPreviewNotes),
-    [],
+  const midiNotes = useMemo(
+    () => parsedMidi.noteEvents.map((note) => note.midiNote),
+    [parsedMidi],
   )
+  const midiRangeFit = useMemo(
+    () => analyzeMidiRangeFit(profile, midiNotes),
+    [midiNotes],
+  )
+  const tabTransposition =
+    midiRangeFit.status === 'transposable'
+      ? midiRangeFit.bestTransposition?.semitones ?? 0
+      : 0
+  const ocarinaTab = useMemo(
+    () =>
+      createOcarinaTab(profile, parsedMidi.noteEvents, {
+        transpositionSemitones: tabTransposition,
+      }),
+    [parsedMidi, tabTransposition],
+  )
+  const playableTabSteps = ocarinaTab.filter((step) => step.fingering)
+  const activeTabStep = ocarinaTab.find((step) => step.index === activeTabIndex)
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of playbackTimeoutsRef.current) {
+        window.clearTimeout(timeoutId)
+      }
+
+      for (const oscillator of oscillatorsRef.current) {
+        try {
+          oscillator.stop()
+        } catch {
+          continue
+        }
+      }
+
+      void audioContextRef.current?.close()
+    }
+  }, [])
+
+  async function handleMidiUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+
+    if (!file) {
+      return
+    }
+
+    clearPreviewPlayback()
+
+    try {
+      const nextParsedMidi = parseMidiFile(await file.arrayBuffer())
+      setParsedMidi(nextParsedMidi)
+      setMidiFileName(file.name)
+      setMidiError(undefined)
+      setActiveTabIndex(undefined)
+
+      const firstNote = nextParsedMidi.noteEvents[0]
+
+      if (firstNote) {
+        setActiveMidiNote(firstNote.midiNote)
+      }
+    } catch (error) {
+      setMidiError(
+        error instanceof Error ? error.message : 'Could not read that MIDI file.',
+      )
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  function handleLoadSample() {
+    clearPreviewPlayback()
+    const nextParsedMidi = parseMidiFile(createTwinkleOcarinaMidiFile())
+    setParsedMidi(nextParsedMidi)
+    setMidiFileName(sampleMidiName)
+    setMidiError(undefined)
+    setActiveTabIndex(undefined)
+    setActiveMidiNote(initialMidiNote)
+  }
+
+  function handlePreviewSample() {
+    clearPreviewPlayback()
+    const nextParsedMidi = parseMidiFile(createTwinkleOcarinaMidiFile())
+    const nextTab = createOcarinaTab(profile, nextParsedMidi.noteEvents)
+
+    setParsedMidi(nextParsedMidi)
+    setMidiFileName(sampleMidiName)
+    setMidiError(undefined)
+    setActiveTabIndex(undefined)
+    setActiveMidiNote(initialMidiNote)
+    playPreview(nextTab)
+  }
+
+  function handlePlayCurrentTab() {
+    if (isPlaying) {
+      clearPreviewPlayback()
+      return
+    }
+
+    playPreview(ocarinaTab)
+  }
+
+  function playPreview(tabSteps: readonly OcarinaTabStep[]) {
+    const stepsWithFingerings = tabSteps.filter((step) => step.fingering)
+
+    if (stepsWithFingerings.length === 0) {
+      return
+    }
+
+    clearPreviewPlayback()
+    setIsPlaying(true)
+
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as Window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext
+    const audioContext = AudioContextConstructor
+      ? new AudioContextConstructor()
+      : undefined
+
+    if (audioContext) {
+      audioContextRef.current = audioContext
+      void audioContext.resume()
+      scheduleAudioPreview(audioContext, stepsWithFingerings)
+    }
+
+    for (const step of stepsWithFingerings) {
+      const timeoutId = window.setTimeout(() => {
+        setActiveMidiNote(step.midiNote)
+        setActiveTabIndex(step.index)
+      }, Math.max(0, step.startMs))
+      playbackTimeoutsRef.current.push(timeoutId)
+    }
+
+    const lastStep = stepsWithFingerings.at(-1)
+    const finalTimeoutId = window.setTimeout(
+      () => {
+        clearPreviewPlayback()
+      },
+      lastStep ? lastStep.startMs + lastStep.durationMs + 120 : 120,
+    )
+    playbackTimeoutsRef.current.push(finalTimeoutId)
+  }
+
+  function scheduleAudioPreview(
+    audioContext: AudioContext,
+    tabSteps: readonly OcarinaTabStep[],
+  ) {
+    const previewStartTime = audioContext.currentTime + 0.05
+
+    for (const step of tabSteps) {
+      const oscillator = audioContext.createOscillator()
+      const gain = audioContext.createGain()
+      const startTime = previewStartTime + step.startMs / 1000
+      const endTime = startTime + Math.max(step.durationMs / 1000, 0.08)
+
+      oscillator.type = 'sine'
+      oscillator.frequency.value = midiNoteToFrequency(step.midiNote)
+      gain.gain.setValueAtTime(0.0001, startTime)
+      gain.gain.exponentialRampToValueAtTime(0.18, startTime + 0.02)
+      gain.gain.setValueAtTime(0.18, Math.max(startTime + 0.03, endTime - 0.04))
+      gain.gain.exponentialRampToValueAtTime(0.0001, endTime)
+      oscillator.connect(gain).connect(audioContext.destination)
+      oscillator.start(startTime)
+      oscillator.stop(endTime + 0.02)
+      oscillator.onended = () => {
+        oscillatorsRef.current = oscillatorsRef.current.filter(
+          (storedOscillator) => storedOscillator !== oscillator,
+        )
+      }
+      oscillatorsRef.current.push(oscillator)
+    }
+  }
+
+  function clearPreviewPlayback() {
+    for (const timeoutId of playbackTimeoutsRef.current) {
+      window.clearTimeout(timeoutId)
+    }
+
+    playbackTimeoutsRef.current = []
+
+    for (const oscillator of oscillatorsRef.current) {
+      try {
+        oscillator.stop()
+      } catch {
+        continue
+      }
+    }
+
+    oscillatorsRef.current = []
+    void audioContextRef.current?.close()
+    audioContextRef.current = undefined
+    setIsPlaying(false)
+    setActiveTabIndex(undefined)
+  }
 
   return (
     <main className="app-shell">
       <section className="app-workspace" aria-labelledby="page-title">
         <header className="app-header">
           <p className="app-eyebrow">Ocarina tab generator</p>
-          <h1 id="page-title">Note-to-fingering map</h1>
+          <h1 id="page-title">MIDI-to-tab example</h1>
           <p>
-            This profile maps absolute MIDI notes to the physical holes used by
-            the 12-hole C ocarina diagram.
+            Upload a simple melody MIDI, generate its ocarina fingering
+            sequence, and preview each tab step against the 12-hole C profile.
           </p>
         </header>
 
-        <section className="note-lab" aria-label="Ocarina fingering selector">
+        <section className="midi-page" aria-label="MIDI tab builder">
           <div className="note-lab__diagram-panel">
             <div className="note-lab__selected">
-              <span>Selected note</span>
+              <span>Preview note</span>
               <strong data-testid="active-note">
                 {activeFingering
                   ? `${activeFingering.noteName} / MIDI ${activeFingering.midiNote}`
@@ -57,31 +265,73 @@ function App() {
                 }
               />
             </div>
+
+            <div className="preview-actions">
+              <button
+                className="action-button action-button--primary"
+                onClick={handlePreviewSample}
+                type="button"
+              >
+                Preview sample
+              </button>
+              <button
+                className="action-button"
+                disabled={playableTabSteps.length === 0}
+                onClick={handlePlayCurrentTab}
+                type="button"
+              >
+                {isPlaying ? 'Stop' : 'Play tab'}
+              </button>
+            </div>
           </div>
 
-          <div className="note-lab__controls">
-            <div className="note-lab__range">
-              <span>Playable range</span>
-              <strong>
-                {playableRange.lowest.noteName}-{playableRange.highest.noteName}
-              </strong>
-            </div>
+          <div className="midi-page__side">
+            <section className="midi-card" aria-label="MIDI source">
+              <div className="midi-card__header">
+                <span>MIDI source</span>
+                <strong>{midiFileName}</strong>
+              </div>
 
-            <div className="note-grid" aria-label="Playable notes">
-              {profile.fingerings.map((fingering) => (
-                <button
-                  aria-pressed={fingering.midiNote === activeMidiNote}
-                  className="note-button"
-                  data-testid={`note-button-${fingering.noteName}`}
-                  key={fingering.midiNote}
-                  onClick={() => setActiveMidiNote(fingering.midiNote)}
-                  type="button"
-                >
-                  <span>{fingering.noteName}</span>
-                  <small>MIDI {fingering.midiNote}</small>
-                </button>
-              ))}
-            </div>
+              <label className="upload-control">
+                <input
+                  accept=".mid,.midi,audio/midi,audio/x-midi"
+                  onChange={handleMidiUpload}
+                  type="file"
+                />
+                <span>Upload MIDI</span>
+              </label>
+
+              <button className="action-button" onClick={handleLoadSample} type="button">
+                Load sample
+              </button>
+
+              {midiError ? <p className="form-error">{midiError}</p> : null}
+            </section>
+
+            <section className="midi-card" aria-label="Ocarina profile">
+              <div className="note-lab__range">
+                <span>Playable range</span>
+                <strong>
+                  {playableRange.lowest.noteName}-{playableRange.highest.noteName}
+                </strong>
+              </div>
+
+              <div className="note-grid" aria-label="Playable notes">
+                {profile.fingerings.map((fingering) => (
+                  <button
+                    aria-pressed={fingering.midiNote === activeMidiNote}
+                    className="note-button"
+                    data-testid={`note-button-${fingering.noteName}`}
+                    key={fingering.midiNote}
+                    onClick={() => setActiveMidiNote(fingering.midiNote)}
+                    type="button"
+                  >
+                    <span>{fingering.noteName}</span>
+                    <small>MIDI {fingering.midiNote}</small>
+                  </button>
+                ))}
+              </div>
+            </section>
           </div>
         </section>
 
@@ -94,6 +344,34 @@ function App() {
           <div className="status-panel">
             <span>Tab generation path</span>
             <strong>{formatTabGenerationPath(midiRangeFit)}</strong>
+          </div>
+
+          <div className="status-panel">
+            <span>Tab steps</span>
+            <strong>{formatStepCount(ocarinaTab)}</strong>
+          </div>
+        </section>
+
+        <section className="tab-sequence" aria-label="Generated tab sequence">
+          <div className="tab-sequence__header">
+            <h2>Generated tab</h2>
+            <span>{formatTransposition(tabTransposition)}</span>
+          </div>
+
+          <div className="tab-strip">
+            {ocarinaTab.map((step) => (
+              <article
+                className="tab-step"
+                data-active={step.index === activeTabStep?.index}
+                key={`${step.index}-${step.startMs}-${step.midiNote}`}
+              >
+                <span>{step.index + 1}</span>
+                <strong>{step.fingering?.noteName ?? `MIDI ${step.midiNote}`}</strong>
+                <small>
+                  {formatTime(step.startMs)} / {formatTime(step.durationMs)}
+                </small>
+              </article>
+            ))}
           </div>
         </section>
       </section>
@@ -135,6 +413,26 @@ function formatSemitoneShift(semitones: number) {
   }
 
   return `${semitones > 0 ? '+' : ''}${semitones} semitones`
+}
+
+function formatStepCount(tab: readonly OcarinaTabStep[]) {
+  const playableSteps = tab.filter((step) => step.fingering).length
+
+  return `${playableSteps}/${tab.length} playable`
+}
+
+function formatTime(milliseconds: number) {
+  return `${(milliseconds / 1000).toFixed(2)}s`
+}
+
+function formatTransposition(semitones: number) {
+  return semitones === 0
+    ? 'Original pitch'
+    : `Transposed ${formatSemitoneShift(semitones)}`
+}
+
+function midiNoteToFrequency(midiNote: number) {
+  return 440 * 2 ** ((midiNote - 69) / 12)
 }
 
 export default App

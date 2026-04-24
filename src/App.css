@@ -5,7 +5,7 @@
 }
 
 .app-workspace {
-  width: min(100%, 1080px);
+  width: min(100%, 1180px);
   display: grid;
   gap: 28px;
   margin: 0 auto;
@@ -34,7 +34,8 @@
   max-width: 660px;
 }
 
-.note-lab {
+.note-lab,
+.midi-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 24px;
@@ -43,6 +44,8 @@
 
 .note-lab__diagram-panel,
 .note-lab__controls,
+.midi-card,
+.tab-sequence,
 .status-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -92,6 +95,101 @@
   display: grid;
   gap: 16px;
   padding: 16px;
+}
+
+.midi-page__side {
+  display: grid;
+  gap: 16px;
+}
+
+.midi-card {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.midi-card__header {
+  display: grid;
+  gap: 4px;
+}
+
+.midi-card__header span,
+.tab-sequence__header span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.midi-card__header strong {
+  color: var(--text-h);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-button,
+.upload-control {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  background: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.action-button:hover,
+.upload-control:hover {
+  border-color: var(--accent-border);
+}
+
+.action-button:focus-visible,
+.upload-control:focus-within {
+  outline: 3px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+.action-button:disabled {
+  color: var(--text);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.action-button--primary {
+  border-color: var(--accent);
+  color: var(--bg);
+  background: var(--accent);
+}
+
+.upload-control input {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.form-error {
+  color: #9f1d32;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .note-lab__range strong,
@@ -149,12 +247,68 @@
 
 .midi-readiness {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
 .status-panel {
   padding: 16px;
+}
+
+.tab-sequence {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.tab-sequence__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tab-sequence__header h2 {
+  margin: 0;
+}
+
+.tab-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 8px;
+}
+
+.tab-step {
+  min-height: 78px;
+  display: grid;
+  gap: 2px;
+  align-content: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.tab-step[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.tab-step span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tab-step strong {
+  color: var(--text-h);
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.tab-step small {
+  color: var(--text);
+  font-size: 12px;
 }
 
 @media (max-width: 860px) {
@@ -163,6 +317,7 @@
   }
 
   .note-lab,
+  .midi-page,
   .midi-readiness {
     grid-template-columns: 1fr;
   }
@@ -175,5 +330,9 @@
 @media (max-width: 420px) {
   .note-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tab-sequence__header {
+    display: grid;
   }
 }
