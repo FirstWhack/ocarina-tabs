@@ -23,6 +23,8 @@ test('sample preview advances the ocarina diagram through MIDI notes', async ({
 }) => {
   await page.goto('/')
 
+  await expect(page.getByLabel('Track', { exact: true })).toHaveValue('0')
+  await expect(page.getByTestId('generated-tab').locator('svg')).toHaveCount(14)
   await page.getByRole('button', { name: 'Preview sample' }).click()
 
   await expect(page.getByTestId('active-note')).toHaveText('G5 / MIDI 79', {

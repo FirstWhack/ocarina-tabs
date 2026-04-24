@@ -7,16 +7,22 @@ import {
   getPlayableRange,
   standard12HoleCOcarinaProfile,
 } from './ocarina/ocarinaProfile'
-import { createOcarinaTab } from './ocarina/ocarinaTab'
-import type { OcarinaTabStep } from './ocarina/ocarinaTab'
+import { createMonophonicMidiLine, createOcarinaTab } from './ocarina/ocarinaTab'
+import type { MonophonicMidiLine, OcarinaTabStep } from './ocarina/ocarinaTab'
 import { parseMidiFile } from './midi/midiParser'
-import type { ParsedMidiFile } from './midi/midiParser'
+import type { MidiNoteEvent, ParsedMidiFile } from './midi/midiParser'
 import { createTwinkleOcarinaMidiFile } from './midi/sampleMidi'
 import './App.css'
 
 const profile = standard12HoleCOcarinaProfile
 const initialMidiNote = 72
 const sampleMidiName = 'Twinkle C5 phrase.mid'
+type TrackSelection = number | 'all'
+type TabLine = {
+  index: number
+  startBeat: number
+  steps: readonly OcarinaTabStep[]
+}
 
 function App() {
   const [activeMidiNote, setActiveMidiNote] = useState(initialMidiNote)
@@ -24,6 +30,7 @@ function App() {
   const [parsedMidi, setParsedMidi] = useState<ParsedMidiFile>(() =>
     parseMidiFile(createTwinkleOcarinaMidiFile()),
   )
+  const [selectedTrack, setSelectedTrack] = useState<TrackSelection>(0)
   const [midiFileName, setMidiFileName] = useState(sampleMidiName)
   const [midiError, setMidiError] = useState<string | undefined>()
   const [isPlaying, setIsPlaying] = useState(false)
@@ -33,9 +40,17 @@ function App() {
 
   const activeFingering = getFingeringForMidiNote(profile, activeMidiNote)
   const playableRange = getPlayableRange(profile)
+  const selectedTrackNotes = useMemo(
+    () => getSelectedTrackNotes(parsedMidi, selectedTrack),
+    [parsedMidi, selectedTrack],
+  )
+  const monophonicLine = useMemo(
+    () => createMonophonicMidiLine(selectedTrackNotes),
+    [selectedTrackNotes],
+  )
   const midiNotes = useMemo(
-    () => parsedMidi.noteEvents.map((note) => note.midiNote),
-    [parsedMidi],
+    () => monophonicLine.notes.map((note) => note.midiNote),
+    [monophonicLine],
   )
   const midiRangeFit = useMemo(
     () => analyzeMidiRangeFit(profile, midiNotes),
@@ -47,13 +62,17 @@ function App() {
       : 0
   const ocarinaTab = useMemo(
     () =>
-      createOcarinaTab(profile, parsedMidi.noteEvents, {
+      createOcarinaTab(profile, monophonicLine.notes, {
         transpositionSemitones: tabTransposition,
       }),
-    [parsedMidi, tabTransposition],
+    [monophonicLine, tabTransposition],
   )
   const playableTabSteps = ocarinaTab.filter((step) => step.fingering)
   const activeTabStep = ocarinaTab.find((step) => step.index === activeTabIndex)
+  const tabLines = useMemo(
+    () => createTabLines(ocarinaTab, parsedMidi.ticksPerQuarter),
+    [ocarinaTab, parsedMidi.ticksPerQuarter],
+  )
 
   useEffect(() => {
     return () => {
@@ -84,12 +103,14 @@ function App() {
 
     try {
       const nextParsedMidi = parseMidiFile(await file.arrayBuffer())
+      const nextSelectedTrack = getDefaultTrackSelection(nextParsedMidi)
+      const firstNote = getFirstMonophonicNote(nextParsedMidi, nextSelectedTrack)
+
       setParsedMidi(nextParsedMidi)
+      setSelectedTrack(nextSelectedTrack)
       setMidiFileName(file.name)
       setMidiError(undefined)
       setActiveTabIndex(undefined)
-
-      const firstNote = nextParsedMidi.noteEvents[0]
 
       if (firstNote) {
         setActiveMidiNote(firstNote.midiNote)
@@ -106,24 +127,48 @@ function App() {
   function handleLoadSample() {
     clearPreviewPlayback()
     const nextParsedMidi = parseMidiFile(createTwinkleOcarinaMidiFile())
+    const nextSelectedTrack = getDefaultTrackSelection(nextParsedMidi)
+    const firstNote = getFirstMonophonicNote(nextParsedMidi, nextSelectedTrack)
+
     setParsedMidi(nextParsedMidi)
+    setSelectedTrack(nextSelectedTrack)
     setMidiFileName(sampleMidiName)
     setMidiError(undefined)
     setActiveTabIndex(undefined)
-    setActiveMidiNote(initialMidiNote)
+    setActiveMidiNote(firstNote?.midiNote ?? initialMidiNote)
   }
 
   function handlePreviewSample() {
     clearPreviewPlayback()
     const nextParsedMidi = parseMidiFile(createTwinkleOcarinaMidiFile())
-    const nextTab = createOcarinaTab(profile, nextParsedMidi.noteEvents)
+    const nextSelectedTrack = getDefaultTrackSelection(nextParsedMidi)
+    const nextLine = createMonophonicMidiLine(
+      getSelectedTrackNotes(nextParsedMidi, nextSelectedTrack),
+    )
+    const nextTab = createOcarinaTab(profile, nextLine.notes)
+    const firstNote = nextLine.notes[0]
 
     setParsedMidi(nextParsedMidi)
+    setSelectedTrack(nextSelectedTrack)
     setMidiFileName(sampleMidiName)
     setMidiError(undefined)
     setActiveTabIndex(undefined)
-    setActiveMidiNote(initialMidiNote)
+    setActiveMidiNote(firstNote?.midiNote ?? initialMidiNote)
     playPreview(nextTab)
+  }
+
+  function handleTrackSelectionChange(event: ChangeEvent<HTMLSelectElement>) {
+    clearPreviewPlayback()
+    const nextSelectedTrack =
+      event.target.value === 'all' ? 'all' : Number(event.target.value)
+    const firstNote = getFirstMonophonicNote(parsedMidi, nextSelectedTrack)
+
+    setSelectedTrack(nextSelectedTrack)
+    setActiveTabIndex(undefined)
+
+    if (firstNote) {
+      setActiveMidiNote(firstNote.midiNote)
+    }
   }
 
   function handlePlayCurrentTab() {
@@ -308,6 +353,30 @@ function App() {
               {midiError ? <p className="form-error">{midiError}</p> : null}
             </section>
 
+            <section className="midi-card" aria-label="MIDI track picker">
+              <div className="field-control">
+                <label htmlFor="track-select">Track</label>
+                <select
+                  id="track-select"
+                  onChange={handleTrackSelectionChange}
+                  value={selectedTrack}
+                >
+                  <option value="all">
+                    All tracks ({parsedMidi.noteEvents.length} notes)
+                  </option>
+                  {parsedMidi.tracks.map((track) => (
+                    <option
+                      disabled={track.noteCount === 0}
+                      key={track.index}
+                      value={track.index}
+                    >
+                      {formatTrackOption(track)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </section>
+
             <section className="midi-card" aria-label="Ocarina profile">
               <div className="note-lab__range">
                 <span>Playable range</span>
@@ -350,6 +419,11 @@ function App() {
             <span>Tab steps</span>
             <strong>{formatStepCount(ocarinaTab)}</strong>
           </div>
+
+          <div className="status-panel">
+            <span>Monophonic cleanup</span>
+            <strong>{formatMonophonicLine(monophonicLine)}</strong>
+          </div>
         </section>
 
         <section className="tab-sequence" aria-label="Generated tab sequence">
@@ -358,19 +432,53 @@ function App() {
             <span>{formatTransposition(tabTransposition)}</span>
           </div>
 
-          <div className="tab-strip">
-            {ocarinaTab.map((step) => (
-              <article
-                className="tab-step"
-                data-active={step.index === activeTabStep?.index}
-                key={`${step.index}-${step.startMs}-${step.midiNote}`}
-              >
-                <span>{step.index + 1}</span>
-                <strong>{step.fingering?.noteName ?? `MIDI ${step.midiNote}`}</strong>
-                <small>
-                  {formatTime(step.startMs)} / {formatTime(step.durationMs)}
-                </small>
-              </article>
+          <div className="tab-score" data-testid="generated-tab">
+            {tabLines.map((line) => (
+              <div className="tab-line" key={line.index}>
+                <div className="tab-line__marker">
+                  <span>Beat</span>
+                  <strong>{line.startBeat + 1}</strong>
+                </div>
+
+                <div className="tab-strip">
+                  {line.steps.map((step) => (
+                    <article
+                      className="tab-step"
+                      data-active={step.index === activeTabStep?.index}
+                      data-supported={step.fingering ? 'true' : 'false'}
+                      data-testid={`tab-step-${step.index}`}
+                      key={`${step.index}-${step.startMs}-${step.midiNote}`}
+                    >
+                      <div className="tab-step__meta">
+                        <span>{step.index + 1}</span>
+                        <strong>
+                          {step.fingering?.noteName ?? `MIDI ${step.midiNote}`}
+                        </strong>
+                      </div>
+
+                      <div className="tab-step__diagram">
+                        <OcarinaDiagram
+                          filledHoles={step.fingering?.filledHoles ?? []}
+                          title={
+                            step.fingering
+                              ? `${step.fingering.noteName} tab fingering`
+                              : `Unsupported MIDI ${step.midiNote}`
+                          }
+                        />
+                      </div>
+
+                      <small>
+                        {formatBeat(step.startTick, parsedMidi.ticksPerQuarter)} /{' '}
+                        {formatBeat(step.durationTicks, parsedMidi.ticksPerQuarter)}
+                      </small>
+
+                      {step.fingering ? null : (
+                        <b aria-label="Unsupported note">Unsupported</b>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </section>
@@ -421,8 +529,49 @@ function formatStepCount(tab: readonly OcarinaTabStep[]) {
   return `${playableSteps}/${tab.length} playable`
 }
 
-function formatTime(milliseconds: number) {
-  return `${(milliseconds / 1000).toFixed(2)}s`
+function formatMonophonicLine(monophonicLine: MonophonicMidiLine) {
+  if (monophonicLine.sourceNoteCount === monophonicLine.notes.length) {
+    return 'No polyphony found'
+  }
+
+  return `${monophonicLine.droppedChordNotes} chord notes removed, ${monophonicLine.clippedOverlapNotes} overlaps clipped`
+}
+
+function getDefaultTrackSelection(parsedMidi: ParsedMidiFile): TrackSelection {
+  return parsedMidi.tracks.find((track) => track.noteCount > 0)?.index ?? 'all'
+}
+
+function getSelectedTrackNotes(
+  parsedMidi: ParsedMidiFile,
+  selectedTrack: TrackSelection,
+): readonly MidiNoteEvent[] {
+  if (selectedTrack === 'all') {
+    return parsedMidi.noteEvents
+  }
+
+  return (
+    parsedMidi.tracks.find((track) => track.index === selectedTrack)
+      ?.noteEvents ?? []
+  )
+}
+
+function getFirstMonophonicNote(
+  parsedMidi: ParsedMidiFile,
+  selectedTrack: TrackSelection,
+) {
+  return createMonophonicMidiLine(
+    getSelectedTrackNotes(parsedMidi, selectedTrack),
+  ).notes[0]
+}
+
+function formatTrackOption(track: ParsedMidiFile['tracks'][number]) {
+  const trackName = track.name ? `${track.name} ` : ''
+  const channels =
+    track.channels.length > 0
+      ? `, channels ${track.channels.map((channel) => channel + 1).join('/')}`
+      : ''
+
+  return `Track ${track.index + 1}: ${trackName}(${track.noteCount} notes${channels})`
 }
 
 function formatTransposition(semitones: number) {
@@ -433,6 +582,36 @@ function formatTransposition(semitones: number) {
 
 function midiNoteToFrequency(midiNote: number) {
   return 440 * 2 ** ((midiNote - 69) / 12)
+}
+
+function createTabLines(
+  tab: readonly OcarinaTabStep[],
+  ticksPerQuarter: number,
+): readonly TabLine[] {
+  const beatsPerLine = 8
+  const ticksPerLine = ticksPerQuarter * beatsPerLine
+  const linesByIndex = new Map<number, OcarinaTabStep[]>()
+
+  for (const step of tab) {
+    const lineIndex = Math.floor(step.startTick / ticksPerLine)
+    const line = linesByIndex.get(lineIndex) ?? []
+    line.push(step)
+    linesByIndex.set(lineIndex, line)
+  }
+
+  return [...linesByIndex.entries()].map(([index, steps]) => ({
+    index,
+    startBeat: index * beatsPerLine,
+    steps,
+  }))
+}
+
+function formatBeat(ticks: number, ticksPerQuarter: number) {
+  return `${formatDecimal(ticks / ticksPerQuarter)} beats`
+}
+
+function formatDecimal(value: number) {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2)
 }
 
 export default App

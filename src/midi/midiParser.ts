@@ -9,14 +9,29 @@ export type MidiNoteEvent = {
   durationMs: number
 }
 
+export type MidiTrack = {
+  index: number
+  name: string | undefined
+  noteEvents: readonly MidiNoteEvent[]
+  noteCount: number
+  channels: readonly number[]
+}
+
 export type ParsedMidiFile = {
   format: number
   trackCount: number
   ticksPerQuarter: number
   noteEvents: readonly MidiNoteEvent[]
+  tracks: readonly MidiTrack[]
 }
 
 type RawMidiNoteEvent = Omit<MidiNoteEvent, 'startMs' | 'durationMs'>
+
+type RawMidiTrack = {
+  index: number
+  name: string | undefined
+  notes: RawMidiNoteEvent[]
+}
 
 type TempoEvent = {
   tick: number
@@ -55,7 +70,7 @@ export function parseMidiFile(input: ArrayBuffer | Uint8Array): ParsedMidiFile {
   }
 
   const ticksPerQuarter = division
-  const rawNoteEvents: RawMidiNoteEvent[] = []
+  const rawTracks: RawMidiTrack[] = []
   const tempoEvents: TempoEvent[] = []
 
   for (let trackIndex = 0; trackIndex < trackCount; trackIndex += 1) {
@@ -68,45 +83,56 @@ export function parseMidiFile(input: ArrayBuffer | Uint8Array): ParsedMidiFile {
       continue
     }
 
-    parseTrack(bytes, reader.offset, trackEndOffset, trackIndex, {
-      notes: rawNoteEvents,
-      tempos: tempoEvents,
-    })
+    rawTracks.push(
+      parseTrack(bytes, reader.offset, trackEndOffset, trackIndex, tempoEvents),
+    )
     reader.seek(trackEndOffset)
   }
 
-  const noteEvents = rawNoteEvents
-    .map((noteEvent) => ({
-      ...noteEvent,
-      startMs: ticksToMilliseconds(
-        noteEvent.startTick,
-        ticksPerQuarter,
-        tempoEvents,
-      ),
-      durationMs:
-        ticksToMilliseconds(
-          noteEvent.startTick + noteEvent.durationTicks,
-          ticksPerQuarter,
-          tempoEvents,
-        ) -
-        ticksToMilliseconds(
+  const tracks = rawTracks.map((track) => {
+    const noteEvents = track.notes
+      .map((noteEvent) => ({
+        ...noteEvent,
+        startMs: ticksToMilliseconds(
           noteEvent.startTick,
           ticksPerQuarter,
           tempoEvents,
         ),
-    }))
-    .sort(
-      (left, right) =>
-        left.startMs - right.startMs ||
-        left.midiNote - right.midiNote ||
-        left.track - right.track,
-    )
+        durationMs:
+          ticksToMilliseconds(
+            noteEvent.startTick + noteEvent.durationTicks,
+            ticksPerQuarter,
+            tempoEvents,
+          ) -
+          ticksToMilliseconds(
+            noteEvent.startTick,
+            ticksPerQuarter,
+            tempoEvents,
+          ),
+      }))
+      .sort(compareMidiNoteEvents)
+
+    return {
+      index: track.index,
+      name: track.name,
+      noteEvents,
+      noteCount: noteEvents.length,
+      channels: [
+        ...new Set(noteEvents.map((noteEvent) => noteEvent.channel)),
+      ].sort((left, right) => left - right),
+    }
+  })
+
+  const noteEvents = tracks
+    .flatMap((track) => track.noteEvents)
+    .sort(compareMidiNoteEvents)
 
   return {
     format,
     trackCount,
     ticksPerQuarter,
     noteEvents,
+    tracks,
   }
 }
 
@@ -115,13 +141,12 @@ function parseTrack(
   startOffset: number,
   endOffset: number,
   track: number,
-  output: {
-    notes: RawMidiNoteEvent[]
-    tempos: TempoEvent[]
-  },
-) {
+  tempoEvents: TempoEvent[],
+): RawMidiTrack {
   const reader = createMidiReader(bytes, startOffset)
   const activeNotes = new Map<string, ActiveNote[]>()
+  const notes: RawMidiNoteEvent[] = []
+  let name: string | undefined
   let tick = 0
   let runningStatus: number | undefined
 
@@ -138,10 +163,15 @@ function parseTrack(
       const byteLength = reader.readVariableLengthQuantity()
 
       if (metaType === 0x51 && byteLength === 3) {
-        output.tempos.push({
+        tempoEvents.push({
           tick,
           microsecondsPerQuarter: reader.readUint24(),
         })
+        continue
+      }
+
+      if (metaType === 0x03) {
+        name = readText(reader, byteLength) || name
         continue
       }
 
@@ -167,7 +197,7 @@ function parseTrack(
     runningStatus = status
     const eventType = status & 0xf0
     const channel = status & 0x0f
-    const firstDataByte = firstByte >= 0x80 ? reader.readUint8() : reader.readUint8()
+    const firstDataByte = reader.readUint8()
 
     if (eventType === 0xc0 || eventType === 0xd0) {
       continue
@@ -184,29 +214,29 @@ function parseTrack(
     const noteKey = `${channel}:${midiNote}`
 
     if (eventType === 0x90 && velocity > 0) {
-      const notes = activeNotes.get(noteKey) ?? []
-      notes.push({ startTick: tick, velocity })
-      activeNotes.set(noteKey, notes)
+      const activeNoteSet = activeNotes.get(noteKey) ?? []
+      activeNoteSet.push({ startTick: tick, velocity })
+      activeNotes.set(noteKey, activeNoteSet)
       continue
     }
 
-    const notes = activeNotes.get(noteKey)
+    const activeNoteSet = activeNotes.get(noteKey)
 
-    if (!notes) {
+    if (!activeNoteSet) {
       continue
     }
 
-    const activeNote = notes.shift()
+    const activeNote = activeNoteSet.shift()
 
     if (!activeNote) {
       continue
     }
 
-    if (notes.length === 0) {
+    if (activeNoteSet.length === 0) {
       activeNotes.delete(noteKey)
     }
 
-    output.notes.push({
+    notes.push({
       midiNote,
       velocity: activeNote.velocity,
       track,
@@ -215,6 +245,20 @@ function parseTrack(
       durationTicks: tick - activeNote.startTick,
     })
   }
+
+  return {
+    index: track,
+    name,
+    notes,
+  }
+}
+
+function compareMidiNoteEvents(left: MidiNoteEvent, right: MidiNoteEvent) {
+  return (
+    left.startMs - right.startMs ||
+    left.midiNote - right.midiNote ||
+    left.track - right.track
+  )
 }
 
 function ticksToMilliseconds(
@@ -271,6 +315,12 @@ function normalizeTempoEvents(tempoEvents: readonly TempoEvent[]) {
   return normalized
 }
 
+function readText(reader: MidiReader, byteLength: number) {
+  return new TextDecoder().decode(reader.readBytes(byteLength)).trim()
+}
+
+type MidiReader = ReturnType<typeof createMidiReader>
+
 function createMidiReader(bytes: Uint8Array, initialOffset = 0) {
   let offset = initialOffset
 
@@ -320,6 +370,11 @@ function createMidiReader(bytes: Uint8Array, initialOffset = 0) {
         output += String.fromCharCode(bytes[offset + index])
       }
 
+      offset += byteLength
+      return output
+    },
+    readBytes(byteLength: number) {
+      const output = bytes.slice(offset, offset + byteLength)
       offset += byteLength
       return output
     },
