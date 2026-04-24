@@ -1,13 +1,13 @@
 .app-shell {
   min-height: 100svh;
-  padding: 18px 24px 28px;
+  padding: 8px 16px 20px;
   box-sizing: border-box;
 }
 
 .app-workspace {
   width: min(100%, 1680px);
   display: grid;
-  gap: 16px;
+  gap: 10px;
   margin: 0 auto;
 }
 
@@ -22,7 +22,7 @@
 .app-eyebrow {
   margin: 0;
   color: var(--accent);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -40,8 +40,11 @@
 .note-lab,
 .midi-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 268px;
-  gap: 16px;
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'controls'
+    'preview';
+  gap: 10px;
   align-items: start;
 }
 
@@ -56,14 +59,16 @@
 }
 
 .note-lab__diagram-panel {
+  grid-area: preview;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     'selected actions'
     'diagram diagram'
+    'playback playback'
     'profile profile';
-  gap: 12px;
-  padding: 14px;
+  gap: 8px;
+  padding: 10px;
 }
 
 .note-lab__selected,
@@ -89,7 +94,7 @@
 
 .note-lab__selected strong {
   color: var(--text-h);
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 650;
   line-height: 1.1;
 }
@@ -98,14 +103,19 @@
   grid-area: diagram;
   display: flex;
   justify-content: center;
-  padding: 10px;
+  align-items: center;
+  min-height: 148px;
+  max-height: 172px;
+  padding: 6px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #ffffff;
+  overflow: hidden;
 }
 
 .note-lab__diagram .ocarina-diagram {
-  width: min(100%, 520px);
+  width: min(100%, 390px);
+  max-height: 160px;
 }
 
 .note-lab__controls {
@@ -115,15 +125,18 @@
 }
 
 .midi-page__side {
+  grid-area: controls;
   display: grid;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(420px, 1.35fr) minmax(340px, 1fr);
   gap: 10px;
+  align-items: stretch;
 }
 
 .profile-strip {
   grid-area: profile;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 6px;
   align-items: stretch;
   padding-top: 2px;
 }
@@ -131,18 +144,46 @@
 .midi-card {
   display: grid;
   gap: 10px;
+  min-height: 0;
   padding: 12px;
+  align-content: space-between;
+}
+
+.midi-page__side .midi-card {
+  min-width: 0;
+  min-height: 108px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.midi-card[aria-label='MIDI source'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.midi-card[aria-label='MIDI track picker'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.midi-card[aria-label='MIDI source'] .midi-card__header,
+.midi-card[aria-label='MIDI source'] .form-error {
+  grid-column: 1 / -1;
+}
+
+.midi-card[aria-label='MIDI source'] .midi-card__header {
+  min-width: 0;
 }
 
 .midi-card__header {
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .midi-card__header span,
 .tab-sequence__header span {
   color: var(--text);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -150,10 +191,24 @@
 
 .midi-card__header strong {
   color: var(--text-h);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 650;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.midi-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.midi-card__suggestion {
+  display: flex;
+  justify-content: start;
 }
 
 .preview-actions {
@@ -162,22 +217,78 @@
   flex-wrap: wrap;
   align-self: start;
   justify-content: end;
+  gap: 8px;
+}
+
+.preview-actions .action-button {
+  min-height: 34px;
+}
+
+.playback-controls {
+  grid-area: playback;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 0.36fr);
   gap: 10px;
+  align-items: end;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.playback-slider {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.playback-slider span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.playback-slider strong {
+  min-width: 74px;
+  color: var(--text-h);
+  font-size: 12px;
+  font-weight: 750;
+  text-align: right;
+}
+
+.playback-slider input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.playback-slider input:focus-visible {
+  outline: 3px solid var(--accent-border);
+  outline-offset: 3px;
+}
+
+.playback-slider--speed strong {
+  min-width: 42px;
 }
 
 .action-button,
 .upload-control {
-  min-height: 38px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-h);
   background: var(--bg);
   font: inherit;
   font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
   line-height: 1.1;
   cursor: pointer;
 }
@@ -196,7 +307,7 @@
 .action-button:disabled {
   color: var(--text);
   cursor: not-allowed;
-  opacity: 0.65;
+  opacity: 0.52;
 }
 
 .action-button--primary {
@@ -246,14 +357,12 @@
 
 .track-picker {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .track-picker__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  gap: 6px;
 }
 
 .track-picker__header span {
@@ -266,25 +375,40 @@
 
 .track-picker__header strong {
   color: var(--text-h);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 750;
+}
+
+.track-picker__controls {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .track-picker__actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
 }
 
 .track-picker__actions .action-button {
-  min-height: 32px;
-  padding: 6px 8px;
+  min-height: 30px;
+  border: 0;
+  padding: 5px 8px;
+  background: transparent;
 }
 
 .difficulty-control {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 3px;
+  width: min(100%, 260px);
   padding: 3px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -293,7 +417,7 @@
 
 .difficulty-control button {
   min-height: 30px;
-  padding: 5px 6px;
+  padding: 5px 8px;
   border: 0;
   border-radius: 5px;
   color: var(--text);
@@ -318,21 +442,54 @@
   background: var(--accent);
 }
 
-.track-list {
-  max-height: 220px;
+.track-list-panel {
   display: grid;
   gap: 6px;
+  position: relative;
+}
+
+.track-list-panel summary {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  background: var(--bg);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.track-list-panel[open] summary {
+  border-color: var(--accent-border);
+}
+
+.track-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(360px, 70vw);
+  max-height: 164px;
+  display: grid;
+  gap: 5px;
   overflow: auto;
-  padding-right: 2px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
 }
 
 .track-option {
   min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
+  gap: 6px;
   align-items: start;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-h);
@@ -355,7 +512,7 @@
 
 .track-option strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -363,7 +520,7 @@
 
 .track-option small {
   color: var(--text);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.1;
 }
 
@@ -388,10 +545,8 @@
 }
 
 .transpose-control__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 6px;
 }
 
 .transpose-control__header span {
@@ -404,25 +559,38 @@
 
 .transpose-control__header strong {
   color: var(--text-h);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 650;
+}
+
+.transpose-control__actions {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
 }
 
 .transpose-control__buttons {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  gap: 3px;
+  width: min(100%, 270px);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
 }
 
 .transpose-control__buttons .action-button {
-  min-height: 34px;
-  padding: 6px 8px;
+  min-height: 30px;
+  border: 0;
+  padding: 5px 8px;
+  background: transparent;
 }
 
 .transpose-control__buttons input {
   min-width: 0;
   width: 100%;
-  min-height: 34px;
+  min-height: 30px;
   box-sizing: border-box;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -454,7 +622,7 @@
 
 .profile-strip .note-lab__range {
   align-content: center;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
@@ -462,17 +630,17 @@
 
 .note-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
+  gap: 5px;
 }
 
 .note-button {
-  min-height: 44px;
+  min-height: 34px;
   display: grid;
   gap: 2px;
   align-content: center;
   justify-items: center;
-  padding: 5px 6px;
+  padding: 4px 5px;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-h);
@@ -497,36 +665,36 @@
 }
 
 .note-button span {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 750;
 }
 
 .note-button small {
   color: var(--text);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .midi-readiness {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .status-panel {
-  padding: 12px;
+  padding: 10px;
 }
 
 .tab-sequence {
   display: grid;
-  gap: 12px;
-  padding: 12px;
+  gap: 8px;
+  padding: 8px;
 }
 
 .tab-sequence__header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
 }
 
 .tab-sequence__header h2 {
@@ -544,7 +712,7 @@
 }
 
 .tab-view-toggle button {
-  min-height: 36px;
+  min-height: 34px;
   padding: 6px 12px;
   border: 0;
   border-radius: 5px;
@@ -571,16 +739,16 @@
 }
 
 .tab-filter-toggle {
-  min-height: 44px;
+  min-height: 34px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 7px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text-h);
   background: var(--bg);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 750;
   line-height: 1;
   cursor: pointer;
@@ -601,6 +769,43 @@
 .tab-score {
   display: grid;
   gap: 18px;
+}
+
+.diagnostics-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.diagnostics-panel summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.diagnostics-panel summary span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.diagnostics-panel summary strong {
+  font-size: 13px;
+}
+
+.diagnostics-panel[open] {
+  padding-bottom: 8px;
+}
+
+.diagnostics-panel .midi-readiness {
+  padding: 0 8px;
 }
 
 .tab-line {
@@ -637,16 +842,16 @@
 
 .tab-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 6px;
 }
 
 .tab-step {
-  min-height: 150px;
+  min-height: 116px;
   display: grid;
-  gap: 8px;
+  gap: 5px;
   align-content: start;
-  padding: 10px;
+  padding: 7px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
@@ -663,7 +868,7 @@
 }
 
 .tab-step__meta {
-  min-height: 36px;
+  min-height: 30px;
   display: grid;
   gap: 1px;
 }
@@ -680,7 +885,7 @@
 
 .tab-step__meta strong {
   color: var(--text-h);
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
@@ -688,8 +893,8 @@
 .tab-step__diagram {
   display: flex;
   align-items: center;
-  min-height: 66px;
-  padding: 6px;
+  min-height: 48px;
+  padding: 4px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: #ffffff;
@@ -701,7 +906,7 @@
 
 .tab-step small {
   color: var(--text);
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1.15;
 }
 
@@ -712,16 +917,16 @@
   border-radius: 4px;
   color: #7f1022;
   background: rgba(196, 58, 77, 0.14);
-  font-size: 11px;
+  font-size: 9px;
   line-height: 1;
   text-transform: uppercase;
 }
 
 .tab-sheet-page {
-  min-height: 720px;
+  min-height: 560px;
   display: grid;
-  gap: 28px;
-  padding: 32px;
+  gap: 24px;
+  padding: 24px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #ffffff;
@@ -747,7 +952,7 @@
 }
 
 .tab-sheet-note {
-  width: 86px;
+  width: 74px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -792,9 +997,9 @@
 }
 
 .tab-sheet-duration {
-  height: 6px;
+  height: 5px;
   display: inline-block;
-  margin: 0 8px 0 10px;
+  margin: 0 6px 0 8px;
   border-radius: 999px;
   background:
     repeating-linear-gradient(
@@ -817,8 +1022,38 @@
 
   .note-lab,
   .midi-page,
-  .midi-readiness {
+  .midi-readiness,
+  .tab-sequence__header {
     grid-template-columns: 1fr;
+  }
+
+  .midi-page {
+    grid-template-areas:
+      'controls'
+      'preview';
+  }
+
+  .midi-page__side,
+  .track-picker,
+  .track-picker__controls,
+  .transpose-control,
+  .midi-card[aria-label='MIDI source'] {
+    grid-template-columns: 1fr;
+  }
+
+  .midi-page__side {
+    gap: 8px;
+  }
+
+  .midi-page__side .midi-card {
+    min-height: auto;
+    padding: 12px;
+  }
+
+  .track-list {
+    position: static;
+    width: auto;
+    box-shadow: none;
   }
 
   .note-lab__diagram {
@@ -829,13 +1064,24 @@
     grid-template-columns: 1fr;
     grid-template-areas:
       'selected'
-      'diagram'
       'actions'
+      'diagram'
+      'playback'
       'profile';
   }
 
   .preview-actions {
     justify-content: start;
+  }
+
+  .playback-controls,
+  .playback-slider {
+    grid-template-columns: 1fr;
+  }
+
+  .playback-slider strong {
+    min-width: 0;
+    text-align: left;
   }
 
   .profile-strip {

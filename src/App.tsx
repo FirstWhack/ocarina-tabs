@@ -18,6 +18,10 @@ const profile = standard12HoleCOcarinaProfile
 const initialMidiNote = 72
 const sampleMidiName = 'Twinkle C5 phrase.mid'
 const beatsPerTabLine = 8
+const defaultPlaybackSpeed = 1
+const minimumPlaybackSpeed = 0.5
+const maximumPlaybackSpeed = 1.5
+const playbackProgressIntervalMs = 80
 type TrackSelection = readonly number[]
 type TabDisplayMode = 'cards' | 'sheet'
 type SuggestionDifficulty = 'easy' | 'medium' | 'hard'
@@ -43,11 +47,15 @@ function App() {
   const [midiFileName, setMidiFileName] = useState(sampleMidiName)
   const [midiError, setMidiError] = useState<string | undefined>()
   const [isPlaying, setIsPlaying] = useState(false)
+  const [playbackSpeed, setPlaybackSpeed] = useState(defaultPlaybackSpeed)
+  const [playbackPositionMs, setPlaybackPositionMs] = useState(0)
   const [tabDisplayMode, setTabDisplayMode] = useState<TabDisplayMode>('cards')
   const [hideUnsupportedNotes, setHideUnsupportedNotes] = useState(false)
   const [suggestionDifficulty, setSuggestionDifficulty] =
     useState<SuggestionDifficulty>('easy')
   const playbackTimeoutsRef = useRef<number[]>([])
+  const playbackProgressIntervalRef = useRef<number | undefined>(undefined)
+  const playbackPositionMsRef = useRef(0)
   const oscillatorsRef = useRef<OscillatorNode[]>([])
   const audioContextRef = useRef<AudioContext | undefined>(undefined)
 
@@ -90,6 +98,10 @@ function App() {
     [monophonicLine, transpositionSemitones],
   )
   const playableTabSteps = ocarinaTab.filter((step) => step.fingering)
+  const playableDurationMs = useMemo(
+    () => getTabDurationMs(playableTabSteps),
+    [playableTabSteps],
+  )
   const activeTabStep = ocarinaTab.find((step) => step.index === activeTabIndex)
   const visibleTabSteps = useMemo(
     () =>
@@ -111,6 +123,10 @@ function App() {
     return () => {
       for (const timeoutId of playbackTimeoutsRef.current) {
         window.clearTimeout(timeoutId)
+      }
+
+      if (playbackProgressIntervalRef.current !== undefined) {
+        window.clearInterval(playbackProgressIntervalRef.current)
       }
 
       for (const oscillator of oscillatorsRef.current) {
@@ -145,6 +161,7 @@ function App() {
       setMidiFileName(file.name)
       setMidiError(undefined)
       setActiveTabIndex(undefined)
+      updatePlaybackPosition(0)
 
       if (firstNote) {
         setActiveMidiNote(firstNote.midiNote)
@@ -170,6 +187,7 @@ function App() {
     setMidiFileName(sampleMidiName)
     setMidiError(undefined)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
     setActiveMidiNote(firstNote?.midiNote ?? initialMidiNote)
   }
 
@@ -189,8 +207,9 @@ function App() {
     setMidiFileName(sampleMidiName)
     setMidiError(undefined)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
     setActiveMidiNote(firstNote?.midiNote ?? initialMidiNote)
-    playPreview(nextTab)
+    playPreview(nextTab, 0)
   }
 
   function handleTrackSelectionChange(trackIndex: number, isSelected: boolean) {
@@ -205,6 +224,7 @@ function App() {
     setSelectedTracks(nextSelectedTracks)
     setTranspositionSemitones(0)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
 
     if (firstNote) {
       setActiveMidiNote(firstNote.midiNote)
@@ -221,6 +241,7 @@ function App() {
     setSelectedTracks(nextSelectedTracks)
     setTranspositionSemitones(0)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
     setActiveMidiNote(firstNote?.midiNote ?? initialMidiNote)
   }
 
@@ -229,6 +250,7 @@ function App() {
     setSelectedTracks([])
     setTranspositionSemitones(0)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
   }
 
   function handleTranspose(semitones: number) {
@@ -238,6 +260,7 @@ function App() {
 
     setTranspositionSemitones(nextSemitones)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
 
     if (firstNote) {
       setActiveMidiNote(firstNote.midiNote + nextSemitones)
@@ -251,6 +274,7 @@ function App() {
 
     setTranspositionSemitones(nextSemitones)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
 
     if (firstNote) {
       setActiveMidiNote(firstNote.midiNote + nextSemitones)
@@ -265,6 +289,7 @@ function App() {
     clearPreviewPlayback()
     setTranspositionSemitones(suggestedTransposition)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
 
     const firstNote = monophonicLine.notes[0]
 
@@ -282,6 +307,7 @@ function App() {
     setSelectedTracks(suggestedTracks)
     setTranspositionSemitones(0)
     setActiveTabIndex(undefined)
+    updatePlaybackPosition(0)
 
     const firstNote = getFirstMonophonicNote(parsedMidi, suggestedTracks)
 
@@ -290,23 +316,68 @@ function App() {
 
   function handlePlayCurrentTab() {
     if (isPlaying) {
-      clearPreviewPlayback()
+      const nextPosition = getCurrentPlaybackPositionMs(playableDurationMs)
+
+      clearPreviewPlayback({ preserveActiveStep: true })
+      updatePlaybackPosition(nextPosition)
+      setActiveStepAtPosition(playableTabSteps, nextPosition)
       return
     }
 
-    playPreview(ocarinaTab)
+    playPreview(ocarinaTab, playbackPositionMs >= playableDurationMs ? 0 : playbackPositionMs)
   }
 
-  function playPreview(tabSteps: readonly OcarinaTabStep[]) {
-    const stepsWithFingerings = tabSteps.filter((step) => step.fingering)
+  function handlePlaybackSpeedChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextSpeed = clampPlaybackSpeed(Number(event.target.value))
 
-    if (stepsWithFingerings.length === 0) {
+    setPlaybackSpeed(nextSpeed)
+
+    if (isPlaying) {
+      const nextPosition = getCurrentPlaybackPositionMs(playableDurationMs)
+      clearPreviewPlayback({ preserveActiveStep: true })
+      updatePlaybackPosition(nextPosition)
+      playPreview(ocarinaTab, nextPosition, nextSpeed)
+    }
+  }
+
+  function handlePlaybackSeek(event: ChangeEvent<HTMLInputElement>) {
+    const nextPosition = clampPlaybackPosition(
+      Number(event.target.value),
+      playableDurationMs,
+    )
+    const shouldResume = isPlaying
+
+    clearPreviewPlayback({ preserveActiveStep: true })
+    updatePlaybackPosition(nextPosition)
+    setActiveStepAtPosition(playableTabSteps, nextPosition)
+
+    if (shouldResume) {
+      playPreview(ocarinaTab, nextPosition)
+    }
+  }
+
+  function playPreview(
+    tabSteps: readonly OcarinaTabStep[],
+    startPositionMs = 0,
+    speed = playbackSpeed,
+  ) {
+    const stepsWithFingerings = tabSteps.filter((step) => step.fingering)
+    const durationMs = getTabDurationMs(stepsWithFingerings)
+    const previewStartMs = clampPlaybackPosition(startPositionMs, durationMs)
+    const remainingSteps = stepsWithFingerings.filter(
+      (step) => step.startMs + step.durationMs > previewStartMs,
+    )
+
+    if (remainingSteps.length === 0) {
+      updatePlaybackPosition(durationMs)
       return
     }
 
-    clearPreviewPlayback()
+    clearPreviewPlayback({ preserveActiveStep: true })
     setIsPlaying(true)
-    const previewStartMs = stepsWithFingerings[0]?.startMs ?? 0
+    updatePlaybackPosition(previewStartMs)
+    setActiveStepAtPosition(stepsWithFingerings, previewStartMs)
+    startPlaybackProgress(previewStartMs, durationMs, speed)
 
     const AudioContextConstructor =
       window.AudioContext ??
@@ -319,25 +390,27 @@ function App() {
     if (audioContext) {
       audioContextRef.current = audioContext
       void audioContext.resume()
-      scheduleAudioPreview(audioContext, stepsWithFingerings, previewStartMs)
+      scheduleAudioPreview(audioContext, remainingSteps, previewStartMs, speed)
     }
 
-    for (const step of stepsWithFingerings) {
+    for (const step of remainingSteps) {
+      if (step.startMs < previewStartMs) {
+        continue
+      }
+
       const timeoutId = window.setTimeout(() => {
         setActiveMidiNote(step.midiNote)
         setActiveTabIndex(step.index)
-      }, Math.max(0, step.startMs - previewStartMs))
+      }, Math.max(0, (step.startMs - previewStartMs) / speed))
       playbackTimeoutsRef.current.push(timeoutId)
     }
 
-    const lastStep = stepsWithFingerings.at(-1)
     const finalTimeoutId = window.setTimeout(
       () => {
-        clearPreviewPlayback()
+        updatePlaybackPosition(durationMs)
+        clearPreviewPlayback({ preserveActiveStep: true })
       },
-      lastStep
-        ? lastStep.startMs - previewStartMs + lastStep.durationMs + 120
-        : 120,
+      Math.max(0, (durationMs - previewStartMs) / speed) + 120,
     )
     playbackTimeoutsRef.current.push(finalTimeoutId)
   }
@@ -346,14 +419,19 @@ function App() {
     audioContext: AudioContext,
     tabSteps: readonly OcarinaTabStep[],
     previewStartMs: number,
+    speed: number,
   ) {
     const previewStartTime = audioContext.currentTime + 0.05
 
     for (const step of tabSteps) {
       const oscillator = audioContext.createOscillator()
       const gain = audioContext.createGain()
-      const startTime = previewStartTime + (step.startMs - previewStartMs) / 1000
-      const endTime = startTime + Math.max(step.durationMs / 1000, 0.08)
+      const stepEndMs = step.startMs + step.durationMs
+      const startOffsetMs = Math.max(0, step.startMs - previewStartMs)
+      const remainingDurationMs = Math.max(0, stepEndMs - previewStartMs)
+      const audibleDurationMs = Math.min(step.durationMs, remainingDurationMs)
+      const startTime = previewStartTime + startOffsetMs / speed / 1000
+      const endTime = startTime + Math.max(audibleDurationMs / speed / 1000, 0.08)
 
       oscillator.type = 'sine'
       oscillator.frequency.value = midiNoteToFrequency(step.midiNote)
@@ -373,12 +451,72 @@ function App() {
     }
   }
 
-  function clearPreviewPlayback() {
+  function startPlaybackProgress(
+    startPositionMs: number,
+    durationMs: number,
+    speed: number,
+  ) {
+    if (playbackProgressIntervalRef.current !== undefined) {
+      window.clearInterval(playbackProgressIntervalRef.current)
+    }
+
+    playbackPositionMsRef.current = startPositionMs
+    playbackProgressIntervalRef.current = window.setInterval(() => {
+      updatePlaybackPosition(
+        clampPlaybackPosition(
+          playbackPositionMsRef.current + playbackProgressIntervalMs * speed,
+          durationMs,
+        ),
+      )
+    }, playbackProgressIntervalMs)
+  }
+
+  function getCurrentPlaybackPositionMs(durationMs: number) {
+    return clampPlaybackPosition(playbackPositionMsRef.current, durationMs)
+  }
+
+  function updatePlaybackPosition(positionMs: number) {
+    playbackPositionMsRef.current = positionMs
+    setPlaybackPositionMs(positionMs)
+  }
+
+  function setActiveStepAtPosition(
+    tabSteps: readonly OcarinaTabStep[],
+    positionMs: number,
+  ) {
+    const activeStep =
+      tabSteps.find(
+        (step) =>
+          positionMs >= step.startMs &&
+          positionMs < step.startMs + step.durationMs,
+      ) ??
+      [...tabSteps]
+        .filter((step) => step.startMs <= positionMs)
+        .at(-1) ??
+      tabSteps[0]
+
+    if (!activeStep) {
+      setActiveTabIndex(undefined)
+      return
+    }
+
+    setActiveMidiNote(activeStep.midiNote)
+    setActiveTabIndex(activeStep.index)
+  }
+
+  function clearPreviewPlayback(
+    options: { preserveActiveStep?: boolean } = {},
+  ) {
     for (const timeoutId of playbackTimeoutsRef.current) {
       window.clearTimeout(timeoutId)
     }
 
     playbackTimeoutsRef.current = []
+
+    if (playbackProgressIntervalRef.current !== undefined) {
+      window.clearInterval(playbackProgressIntervalRef.current)
+      playbackProgressIntervalRef.current = undefined
+    }
 
     for (const oscillator of oscillatorsRef.current) {
       try {
@@ -392,7 +530,10 @@ function App() {
     void audioContextRef.current?.close()
     audioContextRef.current = undefined
     setIsPlaying(false)
-    setActiveTabIndex(undefined)
+
+    if (!options.preserveActiveStep) {
+      setActiveTabIndex(undefined)
+    }
   }
 
   return (
@@ -445,6 +586,42 @@ function App() {
               </button>
             </div>
 
+            <div className="playback-controls" aria-label="Playback controls">
+              <label className="playback-slider">
+                <span>Position</span>
+                <input
+                  aria-label="Playback position"
+                  disabled={playableDurationMs === 0}
+                  max={Math.max(0, Math.round(playableDurationMs))}
+                  min={0}
+                  onChange={handlePlaybackSeek}
+                  step={50}
+                  type="range"
+                  value={Math.round(
+                    clampPlaybackPosition(playbackPositionMs, playableDurationMs),
+                  )}
+                />
+                <strong>
+                  {formatPlaybackTime(playbackPositionMs)} /{' '}
+                  {formatPlaybackTime(playableDurationMs)}
+                </strong>
+              </label>
+
+              <label className="playback-slider playback-slider--speed">
+                <span>Speed</span>
+                <input
+                  aria-label="Playback speed"
+                  max={maximumPlaybackSpeed}
+                  min={minimumPlaybackSpeed}
+                  onChange={handlePlaybackSpeedChange}
+                  step={0.05}
+                  type="range"
+                  value={playbackSpeed}
+                />
+                <strong>{formatPlaybackSpeed(playbackSpeed)}</strong>
+              </label>
+            </div>
+
             <section className="profile-strip" aria-label="Ocarina profile">
               <div className="note-lab__range">
                 <span>Playable range</span>
@@ -478,18 +655,20 @@ function App() {
                 <strong>{midiFileName}</strong>
               </div>
 
-              <label className="upload-control">
-                <input
-                  accept=".mid,.midi,audio/midi,audio/x-midi"
-                  onChange={handleMidiUpload}
-                  type="file"
-                />
-                <span>Upload MIDI</span>
-              </label>
+              <div className="midi-card__actions">
+                <label className="upload-control">
+                  <input
+                    accept=".mid,.midi,audio/midi,audio/x-midi"
+                    onChange={handleMidiUpload}
+                    type="file"
+                  />
+                  <span>Upload MIDI</span>
+                </label>
 
-              <button className="action-button" onClick={handleLoadSample} type="button">
-                Load sample
-              </button>
+                <button className="action-button" onClick={handleLoadSample} type="button">
+                  Load sample
+                </button>
+              </div>
 
               {midiError ? <p className="form-error">{midiError}</p> : null}
             </section>
@@ -501,93 +680,101 @@ function App() {
                   <strong>{formatTrackSelectionCount(selectedTracks)}</strong>
                 </div>
 
-                <div className="track-picker__actions">
-                  <button
-                    className="action-button"
-                    disabled={parsedMidi.noteEvents.length === 0}
-                    onClick={handleSelectAllTracks}
-                    type="button"
-                  >
-                    All
-                  </button>
-                  <button
-                    className="action-button"
-                    disabled={selectedTracks.length === 0}
-                    onClick={handleClearTracks}
-                    type="button"
-                  >
-                    Clear
-                  </button>
-                </div>
-
-                <div
-                  className="difficulty-control"
-                  role="group"
-                  aria-label="Suggested track difficulty"
-                >
-                  <button
-                    aria-pressed={suggestionDifficulty === 'easy'}
-                    onClick={() => setSuggestionDifficulty('easy')}
-                    type="button"
-                  >
-                    Easy
-                  </button>
-                  <button
-                    aria-pressed={suggestionDifficulty === 'medium'}
-                    onClick={() => setSuggestionDifficulty('medium')}
-                    type="button"
-                  >
-                    Medium
-                  </button>
-                  <button
-                    aria-pressed={suggestionDifficulty === 'hard'}
-                    onClick={() => setSuggestionDifficulty('hard')}
-                    type="button"
-                  >
-                    Hard
-                  </button>
-                </div>
-
-                <div className="track-list" aria-label="Tracks">
-                  {parsedMidi.tracks.map((track) => (
-                    <label
-                      className="track-option"
-                      data-disabled={track.noteCount === 0}
-                      key={track.index}
+                <div className="track-picker__controls">
+                  <div className="track-picker__actions">
+                    <button
+                      className="action-button"
+                      disabled={parsedMidi.noteEvents.length === 0}
+                      onClick={handleSelectAllTracks}
+                      type="button"
                     >
-                      <input
-                        checked={selectedTracks.includes(track.index)}
-                        disabled={track.noteCount === 0}
-                        onChange={(event) =>
-                          handleTrackSelectionChange(
-                            track.index,
-                            event.target.checked,
-                          )
-                        }
-                        type="checkbox"
-                      />
-                      <span>
-                        <strong>{formatTrackName(track)}</strong>
-                        <small>{formatTrackDetail(track)}</small>
-                      </span>
-                    </label>
-                  ))}
+                      All
+                    </button>
+                    <button
+                      className="action-button"
+                      disabled={selectedTracks.length === 0}
+                      onClick={handleClearTracks}
+                      type="button"
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  <div
+                    className="difficulty-control"
+                    role="group"
+                    aria-label="Suggested track difficulty"
+                  >
+                    <button
+                      aria-pressed={suggestionDifficulty === 'easy'}
+                      onClick={() => setSuggestionDifficulty('easy')}
+                      type="button"
+                    >
+                      Easy
+                    </button>
+                    <button
+                      aria-pressed={suggestionDifficulty === 'medium'}
+                      onClick={() => setSuggestionDifficulty('medium')}
+                      type="button"
+                    >
+                      Medium
+                    </button>
+                    <button
+                      aria-pressed={suggestionDifficulty === 'hard'}
+                      onClick={() => setSuggestionDifficulty('hard')}
+                      type="button"
+                    >
+                      Hard
+                    </button>
+                  </div>
+
+                  <details className="track-list-panel">
+                    <summary>Track list</summary>
+
+                    <div className="track-list" aria-label="Tracks">
+                      {parsedMidi.tracks.map((track) => (
+                        <label
+                          className="track-option"
+                          data-disabled={track.noteCount === 0}
+                          key={track.index}
+                        >
+                          <input
+                            checked={selectedTracks.includes(track.index)}
+                            disabled={track.noteCount === 0}
+                            onChange={(event) =>
+                              handleTrackSelectionChange(
+                                track.index,
+                                event.target.checked,
+                              )
+                            }
+                            type="checkbox"
+                          />
+                          <span>
+                            <strong>{formatTrackName(track)}</strong>
+                            <small>{formatTrackDetail(track)}</small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
                 </div>
               </div>
 
-              <button
-                className="action-button"
-                disabled={
-                  suggestedTracks.length === 0 ||
-                  areTrackSelectionsEqual(selectedTracks, suggestedTracks)
-                }
-                onClick={handleUseSuggestedTrack}
-                type="button"
-              >
-                {suggestedTracks.length > 1
-                  ? 'Use suggested tracks'
-                  : 'Use suggested track'}
-              </button>
+              <div className="midi-card__suggestion">
+                <button
+                  className="action-button"
+                  disabled={
+                    suggestedTracks.length === 0 ||
+                    areTrackSelectionsEqual(selectedTracks, suggestedTracks)
+                  }
+                  onClick={handleUseSuggestedTrack}
+                  type="button"
+                >
+                  {suggestedTracks.length > 1
+                    ? 'Use suggested tracks'
+                    : 'Use suggested track'}
+                </button>
+              </div>
             </section>
 
             <section className="midi-card" aria-label="Transposition controls">
@@ -599,82 +786,63 @@ function App() {
                   </strong>
                 </div>
 
-                <div className="transpose-control__buttons">
-                  <button
-                    className="action-button"
-                    onClick={() => handleTranspose(-12)}
-                    type="button"
-                  >
-                    -12
-                  </button>
-                  <button
-                    className="action-button"
-                    onClick={() => handleTranspose(-1)}
-                    type="button"
-                  >
-                    -1
-                  </button>
-                  <input
-                    aria-label="Transpose semitones"
-                    max={24}
-                    min={-24}
-                    onChange={handleTranspositionInputChange}
-                    type="number"
-                    value={transpositionSemitones}
-                  />
-                  <button
-                    className="action-button"
-                    onClick={() => handleTranspose(1)}
-                    type="button"
-                  >
-                    +1
-                  </button>
-                  <button
-                    className="action-button"
-                    onClick={() => handleTranspose(12)}
-                    type="button"
-                  >
-                    +12
-                  </button>
+                <div className="transpose-control__actions">
+                  <div className="transpose-control__buttons">
+                    <button
+                      className="action-button"
+                      onClick={() => handleTranspose(-12)}
+                      type="button"
+                    >
+                      -12
+                    </button>
+                    <button
+                      className="action-button"
+                      onClick={() => handleTranspose(-1)}
+                      type="button"
+                    >
+                      -1
+                    </button>
+                    <input
+                      aria-label="Transpose semitones"
+                      max={24}
+                      min={-24}
+                      onChange={handleTranspositionInputChange}
+                      type="number"
+                      value={transpositionSemitones}
+                    />
+                    <button
+                      className="action-button"
+                      onClick={() => handleTranspose(1)}
+                      type="button"
+                    >
+                      +1
+                    </button>
+                    <button
+                      className="action-button"
+                      onClick={() => handleTranspose(12)}
+                      type="button"
+                    >
+                      +12
+                    </button>
+                  </div>
+
                 </div>
 
-                <button
-                  className="action-button"
-                  disabled={
-                    suggestedTransposition === undefined ||
-                    suggestedTransposition === transpositionSemitones
-                  }
-                  onClick={handleUseSuggestedTransposition}
-                  type="button"
-                >
-                  Use suggested
-                </button>
+                <div className="midi-card__suggestion">
+                  <button
+                    className="action-button"
+                    disabled={
+                      suggestedTransposition === undefined ||
+                      suggestedTransposition === transpositionSemitones
+                    }
+                    onClick={handleUseSuggestedTransposition}
+                    type="button"
+                  >
+                    Use suggested
+                  </button>
+                </div>
               </div>
             </section>
-          </div>
-        </section>
-
-        <section className="midi-readiness" aria-label="MIDI readiness preview">
-          <div className="status-panel">
-            <span>Incoming MIDI range</span>
-            <strong>{formatMidiRangeFit(midiRangeFit)}</strong>
-          </div>
-
-          <div className="status-panel">
-            <span>Tab generation path</span>
-            <strong>
-              {formatTabGenerationPath(ocarinaTab, transpositionSemitones)}
-            </strong>
-          </div>
-
-          <div className="status-panel">
-            <span>Tab steps</span>
-            <strong>{formatStepCount(ocarinaTab)}</strong>
-          </div>
-
-          <div className="status-panel">
-            <span>Monophonic cleanup</span>
-            <strong>{formatMonophonicLine(monophonicLine)}</strong>
           </div>
         </section>
 
@@ -711,6 +879,37 @@ function App() {
               <span>Hide unsupported</span>
             </label>
           </div>
+
+          <details className="diagnostics-panel">
+            <summary>
+              <span>Info</span>
+              <strong>{formatStepCount(ocarinaTab)}</strong>
+            </summary>
+
+            <div className="midi-readiness" aria-label="MIDI readiness preview">
+              <div className="status-panel">
+                <span>Incoming MIDI range</span>
+                <strong>{formatMidiRangeFit(midiRangeFit)}</strong>
+              </div>
+
+              <div className="status-panel">
+                <span>Tab generation path</span>
+                <strong>
+                  {formatTabGenerationPath(ocarinaTab, transpositionSemitones)}
+                </strong>
+              </div>
+
+              <div className="status-panel">
+                <span>Tab steps</span>
+                <strong>{formatStepCount(ocarinaTab)}</strong>
+              </div>
+
+              <div className="status-panel">
+                <span>Monophonic cleanup</span>
+                <strong>{formatMonophonicLine(monophonicLine)}</strong>
+              </div>
+            </div>
+          </details>
 
           {tabDisplayMode === 'sheet' ? (
             <div
@@ -1090,8 +1289,45 @@ function midiNoteToFrequency(midiNote: number) {
   return 440 * 2 ** ((midiNote - 69) / 12)
 }
 
+function getTabDurationMs(tabSteps: readonly OcarinaTabStep[]) {
+  return tabSteps.reduce(
+    (durationMs, step) =>
+      Math.max(durationMs, step.startMs + Math.max(0, step.durationMs)),
+    0,
+  )
+}
+
 function clampSemitones(semitones: number) {
   return Math.max(-24, Math.min(24, Number.isFinite(semitones) ? semitones : 0))
+}
+
+function clampPlaybackSpeed(speed: number) {
+  return Math.max(
+    minimumPlaybackSpeed,
+    Math.min(maximumPlaybackSpeed, Number.isFinite(speed) ? speed : 1),
+  )
+}
+
+function clampPlaybackPosition(positionMs: number, durationMs: number) {
+  return Math.max(
+    0,
+    Math.min(
+      Math.max(0, durationMs),
+      Number.isFinite(positionMs) ? positionMs : 0,
+    ),
+  )
+}
+
+function formatPlaybackTime(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function formatPlaybackSpeed(speed: number) {
+  return `${formatDecimal(speed)}x`
 }
 
 function createTabLines(
