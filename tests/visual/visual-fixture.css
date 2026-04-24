@@ -1,0 +1,41 @@
+:root {
+  color-scheme: light;
+  background: #ffffff;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #ffffff;
+}
+
+.visual-fixture {
+  display: grid;
+  gap: 24px;
+  justify-items: start;
+  padding: 24px;
+}
+
+.visual-case {
+  display: grid;
+  gap: 8px;
+}
+
+.visual-case h1 {
+  margin: 0;
+  color: #111111;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.visual-case__canvas {
+  width: 560px;
+  padding: 20px;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.visual-case__canvas .ocarina-diagram {
+  width: 520px;
+}

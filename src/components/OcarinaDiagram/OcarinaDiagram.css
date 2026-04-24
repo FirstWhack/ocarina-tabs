@@ -1,0 +1,36 @@
+.ocarina-diagram {
+  --ocarina-paper: #ffffff;
+  --ocarina-ink: #111111;
+  --ocarina-open-hole: #ffffff;
+  --ocarina-filled-hole: #111111;
+  --ocarina-well: transparent;
+
+  display: block;
+  width: min(100%, 720px);
+  height: auto;
+  overflow: visible;
+}
+
+.ocarina-diagram__body {
+  fill: var(--ocarina-paper);
+  stroke: var(--ocarina-ink);
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.ocarina-diagram__subhole-wells ellipse {
+  fill: var(--ocarina-well);
+  stroke: var(--ocarina-ink);
+  stroke-width: 3;
+}
+
+.ocarina-diagram__hole {
+  fill: var(--ocarina-open-hole);
+  stroke: var(--ocarina-ink);
+  stroke-width: 4;
+  transition: fill 160ms ease;
+}
+
+.ocarina-diagram__hole-group[data-filled='true'] .ocarina-diagram__hole {
+  fill: var(--ocarina-filled-hole);
+}
