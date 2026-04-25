@@ -1,6 +1,6 @@
 import type { OcarinaProfile } from '../../ocarina/ocarinaProfile'
 import { createOcarinaTab } from '../../ocarina/ocarinaTab'
-import type { MidiSimplificationLevel, MonophonicMidiLine, SimplifiedMidiLine } from '../../ocarina/ocarinaTab'
+import type { MonophonicMidiLine } from '../../ocarina/ocarinaTab'
 import type { ParsedMidiFile } from '../../midi/midiParser'
 import type { TabDocument, TabStep } from '../../tabs/tabTypes'
 import { tabDocumentSchemaVersion } from '../../tabs/tabTypes'
@@ -12,13 +12,11 @@ export type MidiTabBuildInput = {
   fileName: string
   selectedTracks: TrackSelection
   monophonicLine: MonophonicMidiLine
-  simplifiedLine: SimplifiedMidiLine
-  simplificationLevel: MidiSimplificationLevel
   transpositionSemitones: number
 }
 
 export function createTabDocumentFromMidi(input: MidiTabBuildInput): TabDocument {
-  const tabSteps = createOcarinaTab(input.profile, input.simplifiedLine.notes, {
+  const tabSteps = createOcarinaTab(input.profile, input.monophonicLine.notes, {
     transpositionSemitones: input.transpositionSemitones,
   })
 
@@ -35,7 +33,6 @@ export function createTabDocumentFromMidi(input: MidiTabBuildInput): TabDocument
       type: 'midi',
       fileName: input.fileName,
       selectedTracks: input.selectedTracks,
-      simplificationLevel: input.simplificationLevel,
     },
     steps: tabSteps.map(toTabStep),
   }

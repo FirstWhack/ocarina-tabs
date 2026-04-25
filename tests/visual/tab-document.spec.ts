@@ -9,7 +9,6 @@ import { parseMidiFile } from '../../src/midi/midiParser'
 import { createTwinkleOcarinaMidiFile } from '../../src/midi/sampleMidi'
 import {
   createMonophonicMidiLine,
-  simplifyMonophonicMidiLine,
 } from '../../src/ocarina/ocarinaTab'
 import { standard12HoleCOcarinaProfile } from '../../src/ocarina/ocarinaProfile'
 import {
@@ -22,6 +21,7 @@ import {
   getActiveStepAtPosition,
   getTabDurationMs,
   getVisibleTabSteps,
+  transposeTabDocument,
 } from '../../src/tabs/tabTransforms'
 
 const profile = standard12HoleCOcarinaProfile
@@ -32,19 +32,12 @@ test('MIDI adapter creates the same playable tab as the generated sample', () =>
   const monophonicLine = trimMonophonicLineStart(
     createMonophonicMidiLine(getSelectedTrackNotes(parsedMidi, selectedTracks)),
   )
-  const simplifiedLine = simplifyMonophonicMidiLine(
-    monophonicLine,
-    parsedMidi.ticksPerQuarter,
-    0,
-  )
   const document = createTabDocumentFromMidi({
     parsedMidi,
     profile,
     fileName: 'Twinkle C5 phrase.mid',
     selectedTracks,
     monophonicLine,
-    simplifiedLine,
-    simplificationLevel: 0,
     transpositionSemitones: 0,
   })
 
@@ -76,19 +69,12 @@ test('canonical tab transforms group, trim, time, and select steps', () => {
   const monophonicLine = trimMonophonicLineStart(
     createMonophonicMidiLine(getSelectedTrackNotes(parsedMidi, selectedTracks)),
   )
-  const simplifiedLine = simplifyMonophonicMidiLine(
-    monophonicLine,
-    parsedMidi.ticksPerQuarter,
-    0,
-  )
   const document = createTabDocumentFromMidi({
     parsedMidi,
     profile,
     fileName: 'Twinkle C5 phrase.mid',
     selectedTracks,
     monophonicLine,
-    simplifiedLine,
-    simplificationLevel: 0,
     transpositionSemitones: 0,
   })
 
@@ -105,19 +91,12 @@ test('tab JSON export and import round-trips a canonical document', () => {
   const monophonicLine = trimMonophonicLineStart(
     createMonophonicMidiLine(getSelectedTrackNotes(parsedMidi, selectedTracks)),
   )
-  const simplifiedLine = simplifyMonophonicMidiLine(
-    monophonicLine,
-    parsedMidi.ticksPerQuarter,
-    2,
-  )
   const document = createTabDocumentFromMidi({
     parsedMidi,
     profile,
     fileName: 'Twinkle C5 phrase.mid',
     selectedTracks,
     monophonicLine,
-    simplifiedLine,
-    simplificationLevel: 2,
     transpositionSemitones: 1,
   })
   const imported = parseSerializedTabDocument(
@@ -127,13 +106,45 @@ test('tab JSON export and import round-trips a canonical document', () => {
 
   expect(imported.schemaVersion).toBe(1)
   expect(imported.profileId).toBe(document.profileId)
-  expect(imported.transpositionSemitones).toBe(1)
+  expect(imported.transpositionSemitones).toBe(0)
   expect(imported.steps.map((step) => step.midiNote)).toEqual(
+    document.steps.map((step) => step.midiNote),
+  )
+  expect(imported.steps.map((step) => step.sourceMidiNote)).toEqual(
     document.steps.map((step) => step.midiNote),
   )
   expect(imported.steps.map((step) => step.fingering?.noteName)).toEqual(
     document.steps.map((step) => step.fingering?.noteName),
   )
+  expect(serializeTabDocument(imported)).not.toContain('simplificationLevel')
+  expect(serializeTabDocument(imported)).not.toContain('"type": "midi"')
+})
+
+test('canonical tab document transposition preserves ids and recomputes fingerings', () => {
+  const parsedMidi = parseMidiFile(createTwinkleOcarinaMidiFile())
+  const selectedTracks = getDefaultTrackSelection(parsedMidi, profile)
+  const monophonicLine = trimMonophonicLineStart(
+    createMonophonicMidiLine(getSelectedTrackNotes(parsedMidi, selectedTracks)),
+  )
+  const document = createTabDocumentFromMidi({
+    parsedMidi,
+    profile,
+    fileName: 'Twinkle C5 phrase.mid',
+    selectedTracks,
+    monophonicLine,
+    transpositionSemitones: 1,
+  })
+  const transposed = transposeTabDocument(profile, document, 2)
+
+  expect(transposed.transpositionSemitones).toBe(2)
+  expect(transposed.steps.map((step) => step.id)).toEqual(
+    document.steps.map((step) => step.id),
+  )
+  expect(transposed.steps[0].midiNote).toBe(document.steps[0].sourceMidiNote + 2)
+  expect(transposed.steps[0].fingering?.noteName).toBe('D5')
+
+  const unsupported = transposeTabDocument(profile, document, 24)
+  expect(unsupported.steps.some((step) => !step.fingering)).toBe(true)
 })
 
 test('tab JSON import rejects unsupported schema and malformed timing', () => {
@@ -174,4 +185,31 @@ test('tab JSON import rejects unsupported schema and malformed timing', () => {
       profile,
     ),
   ).toThrow(/durationTicks/)
+})
+
+test('old v1 tab JSON with simplifier metadata still imports', () => {
+  const parsedMidi = parseMidiFile(createTwinkleOcarinaMidiFile())
+  const selectedTracks = getDefaultTrackSelection(parsedMidi, profile)
+  const monophonicLine = trimMonophonicLineStart(
+    createMonophonicMidiLine(getSelectedTrackNotes(parsedMidi, selectedTracks)),
+  )
+  const document = createTabDocumentFromMidi({
+    parsedMidi,
+    profile,
+    fileName: 'Twinkle C5 phrase.mid',
+    selectedTracks,
+    monophonicLine,
+    transpositionSemitones: 0,
+  })
+  const legacyJson = JSON.stringify({
+    ...JSON.parse(serializeTabDocument(document)),
+    source: {
+      type: 'midi',
+      fileName: 'Twinkle C5 phrase.mid',
+      selectedTracks: [0],
+      simplificationLevel: 2,
+    },
+  })
+
+  expect(parseSerializedTabDocument(legacyJson, profile).steps).toHaveLength(14)
 })

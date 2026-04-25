@@ -9,7 +9,6 @@ export type TabDocumentSource =
       type: 'midi'
       fileName: string
       selectedTracks: readonly number[]
-      simplificationLevel: number
     }
   | {
       type: 'imported'

@@ -1,8 +1,6 @@
 import type { MidiRangeFitAnalysis } from '../ocarina/ocarinaProfile'
-import type { MidiSimplificationLevel, MonophonicMidiLine, SimplifiedMidiLine } from '../ocarina/ocarinaTab'
+import type { MonophonicMidiLine } from '../ocarina/ocarinaTab'
 import type { TabStep } from './tabTypes'
-
-export const maximumSimplificationLevel = 5
 
 export function formatMidiRangeFit(midiRangeFit: MidiRangeFitAnalysis) {
   const sourceRange = midiRangeFit.sourceRange
@@ -59,16 +57,6 @@ export function formatMonophonicLine(monophonicLine: MonophonicMidiLine) {
   return `${monophonicLine.droppedChordNotes} chord notes removed, ${monophonicLine.clippedOverlapNotes} overlaps clipped`
 }
 
-export function formatSimplifiedLine(simplifiedLine: SimplifiedMidiLine) {
-  if (simplifiedLine.simplificationLevel === 0) {
-    return 'Off'
-  }
-
-  return `${formatSimplificationLevel(
-    simplifiedLine.simplificationLevel,
-  )}, ${simplifiedLine.droppedSimplifiedNotes} notes removed`
-}
-
 export function formatTransposition(semitones: number) {
   return semitones === 0
     ? 'Original pitch'
@@ -85,10 +73,6 @@ export function formatPlaybackTime(milliseconds: number) {
 
 export function formatPlaybackSpeed(speed: number) {
   return `${formatDecimal(speed)}x`
-}
-
-export function formatSimplificationLevel(level: MidiSimplificationLevel) {
-  return level === 0 ? 'Off' : `${level}/${maximumSimplificationLevel}`
 }
 
 export function formatContinuousTabStepLabel(

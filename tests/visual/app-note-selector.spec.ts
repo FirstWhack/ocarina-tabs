@@ -63,10 +63,15 @@ test('exported canonical tab JSON imports back into the app', async ({
   const exportedJson = JSON.parse(await readFile(exportPath, 'utf8')) as {
     schemaVersion: number
     transpositionSemitones: number
+    source: { type: string }
+    steps: { sourceMidiNote: number; midiNote: number }[]
   }
 
   expect(exportedJson.schemaVersion).toBe(1)
-  expect(exportedJson.transpositionSemitones).toBe(1)
+  expect(exportedJson.transpositionSemitones).toBe(0)
+  expect(exportedJson.source.type).toBe('editor')
+  expect(exportedJson.steps[0].sourceMidiNote).toBe(73)
+  expect(exportedJson.steps[0].midiNote).toBe(73)
 
   await page.getByRole('button', { name: 'Load sample' }).click()
   await expect(page.getByTestId('tab-step-0')).toContainText('C5')
@@ -75,4 +80,25 @@ test('exported canonical tab JSON imports back into the app', async ({
 
   await expect(page.getByTestId('tab-step-0')).toContainText('C#5')
   await expect(page.getByTestId('active-note')).toHaveText('C#5 / MIDI 73')
+  await expect(page.getByTestId('transpose-value')).toHaveText('0 semitones')
+
+  await expect(page.getByRole('button', { name: 'All' })).toBeDisabled()
+  await page.getByRole('button', { name: '+1', exact: true }).click()
+
+  await expect(page.getByTestId('transpose-value')).toHaveText('+1 semitones')
+  await expect(page.getByTestId('tab-step-0')).toContainText('D5')
+  await expect(page.getByTestId('active-note')).toHaveText('D5 / MIDI 74')
+
+  const shiftedDownloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export tab' }).click()
+  const shiftedDownload = await shiftedDownloadPromise
+  const shiftedPath = testInfo.outputPath('round-trip-shifted.ocarina-tab.json')
+  await shiftedDownload.saveAs(shiftedPath)
+
+  await page.getByRole('button', { name: 'Load sample' }).click()
+  await expect(page.getByTestId('tab-step-0')).toContainText('C5')
+
+  await page.locator('input[accept*="ocarina-tab"]').setInputFiles(shiftedPath)
+  await expect(page.getByTestId('transpose-value')).toHaveText('0 semitones')
+  await expect(page.getByTestId('tab-step-0')).toContainText('D5')
 })

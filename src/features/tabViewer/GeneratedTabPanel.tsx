@@ -5,7 +5,6 @@ import {
   formatContinuousTabStepLabel,
   formatMidiRangeFit,
   formatMonophonicLine,
-  formatSimplifiedLine,
   formatStepCount,
   formatTabGenerationPath,
   formatTransposition,
@@ -13,7 +12,7 @@ import {
 import { getTabSheetSeparatorMetrics } from '../../tabs/tabTransforms'
 import type { TabDocument, TabLine, TabSection, TabStep } from '../../tabs/tabTypes'
 import type { MidiRangeFitAnalysis } from '../../ocarina/ocarinaProfile'
-import type { MonophonicMidiLine, SimplifiedMidiLine } from '../../ocarina/ocarinaTab'
+import type { MonophonicMidiLine } from '../../ocarina/ocarinaTab'
 
 export type TabDisplayMode = 'cards' | 'sheet'
 
@@ -26,7 +25,6 @@ type GeneratedTabPanelProps = {
   hideUnsupportedNotes: boolean
   midiRangeFit: MidiRangeFitAnalysis
   monophonicLine: MonophonicMidiLine
-  simplifiedLine: SimplifiedMidiLine
   onDisplayModeChange: (displayMode: TabDisplayMode) => void
   onHideUnsupportedNotesChange: (hideUnsupportedNotes: boolean) => void
   onStepSelect: (step: TabStep) => void
@@ -41,7 +39,6 @@ export function GeneratedTabPanel({
   hideUnsupportedNotes,
   midiRangeFit,
   monophonicLine,
-  simplifiedLine,
   onDisplayModeChange,
   onHideUnsupportedNotesChange,
   onStepSelect,
@@ -84,7 +81,6 @@ export function GeneratedTabPanel({
       <DiagnosticsPanel
         midiRangeFit={midiRangeFit}
         monophonicLine={monophonicLine}
-        simplifiedLine={simplifiedLine}
         tabDocument={tabDocument}
       />
 
@@ -111,13 +107,13 @@ function DiagnosticsPanel({
   tabDocument,
   midiRangeFit,
   monophonicLine,
-  simplifiedLine,
 }: {
   tabDocument: TabDocument
   midiRangeFit: MidiRangeFitAnalysis
   monophonicLine: MonophonicMidiLine
-  simplifiedLine: SimplifiedMidiLine
 }) {
+  const isImported = tabDocument.source.type === 'imported'
+
   return (
     <details className="diagnostics-panel">
       <summary>
@@ -126,10 +122,17 @@ function DiagnosticsPanel({
       </summary>
 
       <div className="midi-readiness" aria-label="MIDI readiness preview">
-        <div className="status-panel">
-          <span>Incoming MIDI range</span>
-          <strong>{formatMidiRangeFit(midiRangeFit)}</strong>
-        </div>
+        {isImported ? (
+          <div className="status-panel">
+            <span>Imported profile</span>
+            <strong>{tabDocument.profileName}</strong>
+          </div>
+        ) : (
+          <div className="status-panel">
+            <span>Incoming MIDI range</span>
+            <strong>{formatMidiRangeFit(midiRangeFit)}</strong>
+          </div>
+        )}
 
         <div className="status-panel">
           <span>Tab generation path</span>
@@ -146,15 +149,17 @@ function DiagnosticsPanel({
           <strong>{formatStepCount(tabDocument.steps)}</strong>
         </div>
 
-        <div className="status-panel">
-          <span>Monophonic cleanup</span>
-          <strong>{formatMonophonicLine(monophonicLine)}</strong>
-        </div>
-
-        <div className="status-panel">
-          <span>Simplifier</span>
-          <strong>{formatSimplifiedLine(simplifiedLine)}</strong>
-        </div>
+        {isImported ? (
+          <div className="status-panel">
+            <span>Timing</span>
+            <strong>{tabDocument.ticksPerQuarter} ticks per beat</strong>
+          </div>
+        ) : (
+          <div className="status-panel">
+            <span>Monophonic cleanup</span>
+            <strong>{formatMonophonicLine(monophonicLine)}</strong>
+          </div>
+        )}
       </div>
     </details>
   )

@@ -1,15 +1,35 @@
+import type { OcarinaProfile } from '../ocarina/ocarinaProfile'
+import { getFingeringForMidiNote } from '../ocarina/ocarinaProfile'
 import type { TabLine, TabSection, TabStep } from './tabTypes'
+import type { TabDocument } from './tabTypes'
 
 export const beatsPerTabLine = 8
 
 export function transposeTabSteps(
+  profile: OcarinaProfile,
   tabSteps: readonly TabStep[],
   transpositionSemitones: number,
 ): readonly TabStep[] {
   return tabSteps.map((step) => ({
     ...step,
     midiNote: step.sourceMidiNote + transpositionSemitones,
+    fingering: getFingeringForMidiNote(
+      profile,
+      step.sourceMidiNote + transpositionSemitones,
+    ),
   }))
+}
+
+export function transposeTabDocument(
+  profile: OcarinaProfile,
+  document: TabDocument,
+  transpositionSemitones: number,
+): TabDocument {
+  return {
+    ...document,
+    transpositionSemitones,
+    steps: transposeTabSteps(profile, document.steps, transpositionSemitones),
+  }
 }
 
 export function trimTabStepsStart(tabSteps: readonly TabStep[]): readonly TabStep[] {

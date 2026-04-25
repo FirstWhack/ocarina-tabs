@@ -9,9 +9,7 @@ import {
 } from './ocarina/ocarinaProfile'
 import {
   createMonophonicMidiLine,
-  simplifyMonophonicMidiLine,
 } from './ocarina/ocarinaTab'
-import type { MidiSimplificationLevel } from './ocarina/ocarinaTab'
 import { parseMidiFile } from './midi/midiParser'
 import type { ParsedMidiFile } from './midi/midiParser'
 import { createTwinkleOcarinaMidiFile } from './midi/sampleMidi'
@@ -38,13 +36,9 @@ import {
   formatPlaybackSpeed,
   formatPlaybackTime,
   formatSemitoneShift,
-  formatSimplificationLevel,
 } from './tabs/tabFormatters'
 import {
   clampSemitones,
-  clampSimplificationLevel,
-  maximumSimplificationLevel,
-  minimumSimplificationLevel,
 } from './tabs/tabLimits'
 import {
   createTabLines,
@@ -52,6 +46,7 @@ import {
   getPlayableTabSteps,
   getTabDurationMs,
   getVisibleTabSteps,
+  transposeTabDocument,
 } from './tabs/tabTransforms'
 import type { TabDocument, TabStep } from './tabs/tabTypes'
 import {
@@ -81,8 +76,6 @@ function App() {
   >()
   const [tabDisplayMode, setTabDisplayMode] = useState<TabDisplayMode>('cards')
   const [hideUnsupportedNotes, setHideUnsupportedNotes] = useState(false)
-  const [simplificationLevel, setSimplificationLevel] =
-    useState<MidiSimplificationLevel>(0)
   const [suggestionDifficulty, setSuggestionDifficulty] =
     useState<SuggestionDifficulty>('easy')
 
@@ -100,18 +93,9 @@ function App() {
     () => trimMonophonicLineStart(rawMonophonicLine),
     [rawMonophonicLine],
   )
-  const simplifiedLine = useMemo(
-    () =>
-      simplifyMonophonicMidiLine(
-        monophonicLine,
-        parsedMidi.ticksPerQuarter,
-        simplificationLevel,
-      ),
-    [monophonicLine, parsedMidi.ticksPerQuarter, simplificationLevel],
-  )
   const midiNotes = useMemo(
-    () => simplifiedLine.notes.map((note) => note.midiNote),
-    [simplifiedLine],
+    () => monophonicLine.notes.map((note) => note.midiNote),
+    [monophonicLine],
   )
   const midiRangeFit = useMemo(
     () => analyzeMidiRangeFit(profile, midiNotes),
@@ -134,8 +118,6 @@ function App() {
         fileName: midiFileName,
         selectedTracks,
         monophonicLine,
-        simplifiedLine,
-        simplificationLevel,
         transpositionSemitones,
       }),
     [
@@ -143,12 +125,11 @@ function App() {
       midiFileName,
       selectedTracks,
       monophonicLine,
-      simplifiedLine,
-      simplificationLevel,
       transpositionSemitones,
     ],
   )
   const activeTabDocument = importedTabDocument ?? midiTabDocument
+  const isImportedTabActive = importedTabDocument !== undefined
   const playableTabSteps = useMemo(
     () => getPlayableTabSteps(activeTabDocument.steps),
     [activeTabDocument],
@@ -270,19 +251,13 @@ function App() {
       getSelectedTrackNotes(nextParsedMidi, nextSelectedTracks),
     )
     const firstNote = nextLine.notes[0]
-    const nextSimplifiedLine = simplifyMonophonicMidiLine(
-      trimMonophonicLineStart(nextLine),
-      nextParsedMidi.ticksPerQuarter,
-      simplificationLevel,
-    )
+    const nextMonophonicLine = trimMonophonicLineStart(nextLine)
     const nextDocument = createTabDocumentFromMidi({
       parsedMidi: nextParsedMidi,
       profile,
       fileName: sampleMidiName,
       selectedTracks: nextSelectedTracks,
-      monophonicLine: trimMonophonicLineStart(nextLine),
-      simplifiedLine: nextSimplifiedLine,
-      simplificationLevel,
+      monophonicLine: nextMonophonicLine,
       transpositionSemitones: 0,
     })
 
@@ -337,12 +312,26 @@ function App() {
   }
 
   function handleTranspose(semitones: number) {
-    const nextSemitones = clampSemitones(transpositionSemitones + semitones)
-    const firstNote = simplifiedLine.notes[0]
+    const nextSemitones = clampSemitones(
+      activeTabDocument.transpositionSemitones + semitones,
+    )
 
     resetPlaybackForSourceChange()
+    if (importedTabDocument) {
+      const nextDocument = transposeTabDocument(
+        profile,
+        importedTabDocument,
+        nextSemitones,
+      )
+
+      setImportedTabDocument(nextDocument)
+      setActiveMidiNote(nextDocument.steps[0]?.midiNote ?? initialMidiNote)
+      return
+    }
+
+    const firstNote = monophonicLine.notes[0]
+
     setTranspositionSemitones(nextSemitones)
-    setImportedTabDocument(undefined)
 
     if (firstNote) {
       setActiveMidiNote(firstNote.midiNote + nextSemitones)
@@ -351,11 +340,23 @@ function App() {
 
   function handleTranspositionInputChange(event: ChangeEvent<HTMLInputElement>) {
     const nextSemitones = clampSemitones(Number(event.target.value))
-    const firstNote = simplifiedLine.notes[0]
 
     resetPlaybackForSourceChange()
+    if (importedTabDocument) {
+      const nextDocument = transposeTabDocument(
+        profile,
+        importedTabDocument,
+        nextSemitones,
+      )
+
+      setImportedTabDocument(nextDocument)
+      setActiveMidiNote(nextDocument.steps[0]?.midiNote ?? initialMidiNote)
+      return
+    }
+
+    const firstNote = monophonicLine.notes[0]
+
     setTranspositionSemitones(nextSemitones)
-    setImportedTabDocument(undefined)
 
     if (firstNote) {
       setActiveMidiNote(firstNote.midiNote + nextSemitones)
@@ -367,11 +368,10 @@ function App() {
       return
     }
 
-    const firstNote = simplifiedLine.notes[0]
+    const firstNote = monophonicLine.notes[0]
 
     resetPlaybackForSourceChange()
     setTranspositionSemitones(suggestedTransposition)
-    setImportedTabDocument(undefined)
 
     if (firstNote) {
       setActiveMidiNote(firstNote.midiNote + suggestedTransposition)
@@ -390,23 +390,6 @@ function App() {
     setTranspositionSemitones(0)
     setImportedTabDocument(undefined)
     setActiveMidiNote(firstNote?.midiNote ?? initialMidiNote)
-  }
-
-  function handleSimplificationChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextLevel = clampSimplificationLevel(Number(event.target.value))
-    const firstNote = simplifyMonophonicMidiLine(
-      monophonicLine,
-      parsedMidi.ticksPerQuarter,
-      nextLevel,
-    ).notes[0]
-
-    resetPlaybackForSourceChange()
-    setSimplificationLevel(nextLevel)
-    setImportedTabDocument(undefined)
-
-    if (firstNote) {
-      setActiveMidiNote(firstNote.midiNote + transpositionSemitones)
-    }
   }
 
   function handleStepSelect(step: TabStep) {
@@ -608,6 +591,7 @@ function App() {
                   <div className="track-picker__actions">
                     <button
                       className="action-button"
+                      disabled={isImportedTabActive}
                       onClick={handleSelectAllTracks}
                       type="button"
                     >
@@ -615,6 +599,7 @@ function App() {
                     </button>
                     <button
                       className="action-button"
+                      disabled={isImportedTabActive}
                       onClick={handleClearTracks}
                       type="button"
                     >
@@ -630,6 +615,7 @@ function App() {
                     {(['easy', 'medium', 'hard'] as const).map((difficulty) => (
                       <button
                         aria-pressed={suggestionDifficulty === difficulty}
+                        disabled={isImportedTabActive}
                         key={difficulty}
                         onClick={() => setSuggestionDifficulty(difficulty)}
                         type="button"
@@ -649,12 +635,14 @@ function App() {
                         return (
                           <label
                             className="track-option"
-                            data-disabled={isDisabled ? 'true' : 'false'}
+                            data-disabled={
+                              isDisabled || isImportedTabActive ? 'true' : 'false'
+                            }
                             key={track.index}
                           >
                             <input
                               checked={isSelected}
-                              disabled={isDisabled}
+                              disabled={isDisabled || isImportedTabActive}
                               onChange={(event) =>
                                 handleTrackSelectionChange(
                                   track.index,
@@ -678,7 +666,10 @@ function App() {
               <div className="midi-card__suggestion">
                 <button
                   className="action-button"
-                  disabled={areTrackSelectionsEqual(selectedTracks, suggestedTracks)}
+                  disabled={
+                    isImportedTabActive ||
+                    areTrackSelectionsEqual(selectedTracks, suggestedTracks)
+                  }
                   onClick={handleUseSuggestedTrack}
                   type="button"
                 >
@@ -692,7 +683,7 @@ function App() {
                 <div className="transpose-control__header">
                   <span>Transposition</span>
                   <strong data-testid="transpose-value">
-                    {formatSemitoneShift(transpositionSemitones)}
+                    {formatSemitoneShift(activeTabDocument.transpositionSemitones)}
                   </strong>
                 </div>
 
@@ -718,7 +709,7 @@ function App() {
                       min={-24}
                       onChange={handleTranspositionInputChange}
                       type="number"
-                      value={transpositionSemitones}
+                      value={activeTabDocument.transpositionSemitones}
                     />
                     <button
                       className="action-button"
@@ -741,6 +732,7 @@ function App() {
                       className="action-button"
                       disabled={
                         suggestedTransposition === undefined ||
+                        isImportedTabActive ||
                         suggestedTransposition === transpositionSemitones
                       }
                       onClick={handleUseSuggestedTransposition}
@@ -749,20 +741,6 @@ function App() {
                       Use suggested
                     </button>
                   </div>
-
-                  <label className="simplifier-control">
-                    <span>Simplifier</span>
-                    <input
-                      aria-label="Simplifier level"
-                      max={maximumSimplificationLevel}
-                      min={minimumSimplificationLevel}
-                      onChange={handleSimplificationChange}
-                      step={1}
-                      type="range"
-                      value={simplificationLevel}
-                    />
-                    <strong>{formatSimplificationLevel(simplificationLevel)}</strong>
-                  </label>
                 </div>
               </div>
             </section>
@@ -777,7 +755,6 @@ function App() {
             onDisplayModeChange={setTabDisplayMode}
             onHideUnsupportedNotesChange={setHideUnsupportedNotes}
             onStepSelect={handleStepSelect}
-            simplifiedLine={simplifiedLine}
             tabDocument={activeTabDocument}
             tabLines={tabLines}
             tabSections={tabSections}
