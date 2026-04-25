@@ -134,11 +134,12 @@
 
 .profile-strip {
   grid-area: profile;
+  min-width: 0;
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
   align-items: stretch;
-  padding-top: 2px;
+  padding-top: 0;
 }
 
 .midi-card {
@@ -625,37 +626,84 @@
 }
 
 .profile-strip .note-lab__range {
-  align-content: center;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  display: flex;
+  min-height: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.profile-strip .note-lab__range span {
+  font-size: 11px;
+}
+
+.profile-strip .note-lab__range strong {
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .note-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
-  gap: 5px;
+  --white-key-count: 13;
+  position: relative;
+  min-height: 64px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  scrollbar-width: thin;
+}
+
+.note-grid::before {
+  content: '';
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  left: 6px;
+  height: 44px;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(100% / var(--white-key-count) - 1px),
+      rgba(22, 27, 37, 0.88) calc(100% / var(--white-key-count) - 1px),
+      rgba(22, 27, 37, 0.88) calc(100% / var(--white-key-count))
+    ),
+    #eef4f6;
+  box-shadow: inset 0 0 0 1px rgba(16, 19, 29, 0.28);
 }
 
 .note-button {
-  min-height: 34px;
+  --key-start: 0;
+  --key-width: 1;
+  position: absolute;
+  left: calc(6px + (100% - 12px) / var(--white-key-count) * var(--key-start));
+  width: calc((100% - 12px) / var(--white-key-count) * var(--key-width));
+  bottom: 6px;
+  min-width: 0;
+  height: 44px;
   display: grid;
-  gap: 2px;
-  align-content: center;
+  gap: 1px;
+  align-content: end;
   justify-items: center;
-  padding: 4px 5px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-h);
-  background: var(--bg);
+  padding: 0 2px 5px;
+  border: 0;
+  border-radius: 0 0 4px 4px;
+  color: #171d27;
+  background: transparent;
   font: inherit;
   line-height: 1.1;
   cursor: pointer;
 }
 
 .note-button:hover {
-  border-color: var(--accent-border);
+  background: rgba(110, 211, 207, 0.16);
 }
 
 .note-button:focus-visible {
@@ -664,18 +712,55 @@
 }
 
 .note-button[aria-pressed='true'] {
+  color: #0d2826;
+  background: rgba(110, 211, 207, 0.36);
+}
+
+.note-button[data-accidental='false'] {
+  z-index: 1;
+}
+
+.note-button[data-accidental='true'] {
+  z-index: 2;
+  top: 4px;
+  bottom: auto;
+  height: 36px;
+  align-content: center;
+  padding: 2px;
+  border: 1px solid #384154;
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+  color: #f8fafc;
+  background: linear-gradient(#171b25, #090b11);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
+}
+
+.note-button[data-accidental='true']:hover {
+  background: linear-gradient(#1d2631, #0d1018);
+}
+
+.note-button[data-accidental='true'][aria-pressed='true'] {
   border-color: var(--accent);
-  background: var(--accent-bg);
+  color: #dffdfa;
+  background: linear-gradient(#287c78, #155250);
 }
 
 .note-button span {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 750;
 }
 
 .note-button small {
+  color: rgba(23, 29, 39, 0.62);
+  font-size: 8px;
+}
+
+.note-button[data-accidental='true'] small {
+  color: #aab6c9;
+}
+
+.note-button[data-accidental='true'][aria-pressed='true'] small {
   color: var(--text);
-  font-size: 9px;
 }
 
 .midi-readiness {
@@ -1114,7 +1199,7 @@
 
 @media (max-width: 420px) {
   .note-grid {
-    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+    min-width: 620px;
   }
 
   .tab-sequence__header {

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { CSSProperties, ChangeEvent } from 'react'
 import { OcarinaDiagram } from './components/OcarinaDiagram/OcarinaDiagram'
 import {
   analyzeMidiRangeFit,
@@ -7,9 +7,7 @@ import {
   getPlayableRange,
   standard12HoleCOcarinaProfile,
 } from './ocarina/ocarinaProfile'
-import {
-  createMonophonicMidiLine,
-} from './ocarina/ocarinaTab'
+import { createMonophonicMidiLine } from './ocarina/ocarinaTab'
 import { parseMidiFile } from './midi/midiParser'
 import type { ParsedMidiFile } from './midi/midiParser'
 import { createTwinkleOcarinaMidiFile } from './midi/sampleMidi'
@@ -37,9 +35,7 @@ import {
   formatPlaybackTime,
   formatSemitoneShift,
 } from './tabs/tabFormatters'
-import {
-  clampSemitones,
-} from './tabs/tabLimits'
+import { clampSemitones } from './tabs/tabLimits'
 import {
   createTabLines,
   createTabSections,
@@ -58,6 +54,43 @@ import './App.css'
 const profile = standard12HoleCOcarinaProfile
 const initialMidiNote = 72
 const sampleMidiName = 'Twinkle C5 phrase.mid'
+const lowestPlayableMidiNote = profile.fingerings[0].midiNote
+const naturalPitchClasses = [0, 2, 4, 5, 7, 9, 11] as const
+const accidentalWidthInWhiteKeys = 0.62
+const lowestWhiteKeyIndex = getWhiteKeyIndex(lowestPlayableMidiNote)
+const highestWhiteKeyIndex = getWhiteKeyIndex(
+  profile.fingerings.at(-1)?.midiNote ?? lowestPlayableMidiNote,
+)
+const playableWhiteKeyCount = highestWhiteKeyIndex - lowestWhiteKeyIndex + 1
+
+function isAccidentalNote(noteName: string) {
+  return noteName.includes('#') || noteName.includes('b')
+}
+
+function getWhiteKeyIndex(midiNote: number) {
+  const octave = Math.floor(midiNote / 12) - 1
+  const pitchClass = midiNote % 12
+  const naturalPitchClass = isNaturalPitchClass(pitchClass)
+    ? pitchClass
+    : pitchClass - 1
+  const naturalIndex = naturalPitchClasses.indexOf(
+    naturalPitchClass as (typeof naturalPitchClasses)[number],
+  )
+
+  return octave * naturalPitchClasses.length + naturalIndex
+}
+
+function isNaturalPitchClass(pitchClass: number) {
+  return naturalPitchClasses.includes(
+    pitchClass as (typeof naturalPitchClasses)[number],
+  )
+}
+
+function cssVariables(
+  variables: Record<`--${string}`, string | number>,
+): CSSProperties {
+  return variables as CSSProperties
+}
 
 function App() {
   const exportLinkRef = useRef<HTMLAnchorElement>(null)
@@ -520,23 +553,46 @@ function App() {
                 </strong>
               </div>
 
-              <div className="note-grid" aria-label="Playable notes">
-                {profile.fingerings.map((fingering) => (
-                  <button
-                    aria-pressed={fingering.midiNote === activeMidiNote}
-                    className="note-button"
-                    data-testid={`note-button-${fingering.noteName}`}
-                    key={fingering.midiNote}
-                    onClick={() => {
-                      setActiveMidiNote(fingering.midiNote)
-                      setActiveStepId(undefined)
-                    }}
-                    type="button"
-                  >
-                    <span>{fingering.noteName}</span>
-                    <small>MIDI {fingering.midiNote}</small>
-                  </button>
-                ))}
+              <div
+                className="note-grid"
+                aria-label="Playable notes"
+                style={cssVariables({ '--white-key-count': playableWhiteKeyCount })}
+              >
+                {profile.fingerings.map((fingering) => {
+                  const isAccidental = isAccidentalNote(fingering.noteName)
+                  const whiteKeyOffset =
+                    getWhiteKeyIndex(fingering.midiNote) - lowestWhiteKeyIndex
+                  const keyStart = isAccidental
+                    ? whiteKeyOffset + 1 - accidentalWidthInWhiteKeys / 2
+                    : whiteKeyOffset
+
+                  return (
+                    <button
+                      aria-pressed={fingering.midiNote === activeMidiNote}
+                      className="note-button"
+                      data-accidental={isAccidental}
+                      data-testid={`note-button-${fingering.noteName}`}
+                      key={fingering.midiNote}
+                      onClick={() => {
+                        setActiveMidiNote(fingering.midiNote)
+                        setActiveStepId(undefined)
+                      }}
+                      style={cssVariables({
+                        '--key-start': keyStart,
+                        '--key-width': isAccidental ? accidentalWidthInWhiteKeys : 1,
+                      })}
+                      title={
+                        fingering.aliases.length > 0
+                          ? `${fingering.noteName} / ${fingering.aliases.join(', ')}`
+                          : fingering.noteName
+                      }
+                      type="button"
+                    >
+                      <span>{fingering.noteName}</span>
+                      <small>MIDI {fingering.midiNote}</small>
+                    </button>
+                  )
+                })}
               </div>
             </section>
           </div>
@@ -691,17 +747,17 @@ function App() {
                   <div className="transpose-control__buttons">
                     <button
                       className="action-button"
+                      onClick={() => handleTranspose(-12)}
+                      type="button"
+                    >
+                      -12
+                    </button>
+                    <button
+                      className="action-button"
                       onClick={() => handleTranspose(-1)}
                       type="button"
                     >
                       -1
-                    </button>
-                    <button
-                      className="action-button"
-                      onClick={() => handleTranspose(1)}
-                      type="button"
-                    >
-                      +1
                     </button>
                     <input
                       aria-label="Transpose semitones"
@@ -713,10 +769,10 @@ function App() {
                     />
                     <button
                       className="action-button"
-                      onClick={() => handleTranspose(-12)}
+                      onClick={() => handleTranspose(1)}
                       type="button"
                     >
-                      -12
+                      +1
                     </button>
                     <button
                       className="action-button"

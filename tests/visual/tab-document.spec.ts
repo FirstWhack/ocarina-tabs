@@ -187,7 +187,7 @@ test('tab JSON import rejects unsupported schema and malformed timing', () => {
   ).toThrow(/durationTicks/)
 })
 
-test('old v1 tab JSON with simplifier metadata still imports', () => {
+test('tab JSON import rejects non-canonical saved MIDI metadata', () => {
   const parsedMidi = parseMidiFile(createTwinkleOcarinaMidiFile())
   const selectedTracks = getDefaultTrackSelection(parsedMidi, profile)
   const monophonicLine = trimMonophonicLineStart(
@@ -201,15 +201,44 @@ test('old v1 tab JSON with simplifier metadata still imports', () => {
     monophonicLine,
     transpositionSemitones: 0,
   })
-  const legacyJson = JSON.stringify({
-    ...JSON.parse(serializeTabDocument(document)),
-    source: {
-      type: 'midi',
-      fileName: 'Twinkle C5 phrase.mid',
-      selectedTracks: [0],
-      simplificationLevel: 2,
-    },
-  })
+  const canonicalJson = JSON.parse(serializeTabDocument(document)) as {
+    source: { type: string }
+    transpositionSemitones: number
+    steps: { sourceMidiNote: number; midiNote: number }[]
+  }
 
-  expect(parseSerializedTabDocument(legacyJson, profile).steps).toHaveLength(14)
+  expect(() =>
+    parseSerializedTabDocument(
+      JSON.stringify({
+        ...canonicalJson,
+        source: { type: 'midi' },
+      }),
+      profile,
+    ),
+  ).toThrow(/canonical editor source/)
+
+  expect(() =>
+    parseSerializedTabDocument(
+      JSON.stringify({
+        ...canonicalJson,
+        transpositionSemitones: 2,
+      }),
+      profile,
+    ),
+  ).toThrow(/0 semitones/)
+
+  expect(() =>
+    parseSerializedTabDocument(
+      JSON.stringify({
+        ...canonicalJson,
+        steps: [
+          {
+            ...canonicalJson.steps[0],
+            sourceMidiNote: canonicalJson.steps[0].sourceMidiNote - 1,
+          },
+        ],
+      }),
+      profile,
+    ),
+  ).toThrow(/sourceMidiNote must match midiNote/)
 })

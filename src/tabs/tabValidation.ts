@@ -33,14 +33,28 @@ export function validateTabDocument(
     errors.push('This tab was created for a different ocarina profile.')
   }
 
-  const title = readString(value.title, 'Imported tab')
-  const ticksPerQuarter = readPositiveNumber(value.ticksPerQuarter, 'ticksPerQuarter', errors)
+  const id = readRequiredString(value.id, 'id', errors)
+  const title = readRequiredString(value.title, 'title', errors)
+  const ticksPerQuarter = readPositiveNumber(
+    value.ticksPerQuarter,
+    'ticksPerQuarter',
+    errors,
+  )
   const transpositionSemitones = readFiniteNumber(
     value.transpositionSemitones,
     'transpositionSemitones',
     errors,
   )
+  const source = isRecord(value.source) ? value.source : undefined
   const rawSteps = Array.isArray(value.steps) ? value.steps : undefined
+
+  if (transpositionSemitones !== 0) {
+    errors.push('Tab files must be saved as a standalone baseline with 0 semitones.')
+  }
+
+  if (source?.type !== 'editor') {
+    errors.push('Tab files must use the canonical editor source.')
+  }
 
   if (!rawSteps) {
     errors.push('Tab steps must be an array.')
@@ -59,41 +73,17 @@ export function validateTabDocument(
     valid: true,
     document: {
       schemaVersion: tabDocumentSchemaVersion,
-      id: readString(value.id, createImportedTabId(title)),
+      id,
       title,
       profileId: profile.id,
       profileName: profile.name,
       tuning: profile.tuning,
       ticksPerQuarter,
-      transpositionSemitones,
+      transpositionSemitones: 0,
       source: { type: 'imported' },
       steps,
     },
   }
-}
-
-export function getTabDocumentValidationErrors(document: TabDocument) {
-  const errors: string[] = []
-
-  if (document.schemaVersion !== tabDocumentSchemaVersion) {
-    errors.push('Tab document uses an unsupported schema version.')
-  }
-
-  if (document.ticksPerQuarter <= 0) {
-    errors.push('Tab document must have a positive ticks-per-quarter value.')
-  }
-
-  for (const step of document.steps) {
-    if (step.durationTicks < 0 || step.durationMs < 0) {
-      errors.push(`Tab step "${step.id}" has a negative duration.`)
-    }
-
-    if (step.startTick < 0 || step.startMs < 0) {
-      errors.push(`Tab step "${step.id}" starts before the tab begins.`)
-    }
-  }
-
-  return errors
 }
 
 function validateStep(
@@ -135,6 +125,13 @@ function validateStep(
     `steps[${fallbackIndex}].durationMs`,
     errors,
   )
+  const id = readRequiredString(value.id, `steps[${fallbackIndex}].id`, errors)
+
+  if (sourceMidiNote !== midiNote) {
+    errors.push(
+      `steps[${fallbackIndex}].sourceMidiNote must match midiNote in canonical tab files.`,
+    )
+  }
 
   if (errors.length > 0) {
     return []
@@ -142,7 +139,7 @@ function validateStep(
 
   return [
     {
-      id: readString(value.id, `step-${index}`),
+      id,
       index,
       sourceMidiNote,
       midiNote,
@@ -160,8 +157,13 @@ function isRecord(value: unknown): value is UnsafeRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function readString(value: unknown, fallback: string) {
-  return typeof value === 'string' && value.trim() ? value : fallback
+function readRequiredString(value: unknown, label: string, errors: string[]) {
+  if (typeof value === 'string' && value.trim()) {
+    return value
+  }
+
+  errors.push(`${label} must be a non-empty string.`)
+  return ''
 }
 
 function readFiniteNumber(value: unknown, label: string, errors: string[]) {
@@ -201,8 +203,4 @@ function readNonNegativeInteger(value: unknown, label: string, errors: string[])
   }
 
   return numberValue
-}
-
-function createImportedTabId(title: string) {
-  return `imported-${title.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`
 }
