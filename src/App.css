@@ -326,6 +326,10 @@
   white-space: nowrap;
 }
 
+.export-link {
+  display: none;
+}
+
 .field-control {
   display: grid;
   gap: 8px;
@@ -544,6 +548,41 @@
   gap: 10px;
 }
 
+.simplifier-control {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.simplifier-control span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.simplifier-control strong {
+  min-width: 38px;
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 750;
+  text-align: right;
+}
+
+.simplifier-control input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.simplifier-control input:focus-visible {
+  outline: 3px solid var(--accent-border);
+  outline-offset: 3px;
+}
+
 .transpose-control__header {
   display: grid;
   gap: 6px;
@@ -676,7 +715,7 @@
 
 .midi-readiness {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
 }
 
@@ -1037,8 +1076,14 @@
   .track-picker,
   .track-picker__controls,
   .transpose-control,
+  .simplifier-control,
   .midi-card[aria-label='MIDI source'] {
     grid-template-columns: 1fr;
+  }
+
+  .simplifier-control strong {
+    min-width: 0;
+    text-align: left;
   }
 
   .midi-page__side {
