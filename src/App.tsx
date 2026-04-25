@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import type { CSSProperties, ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, ChangeEvent, KeyboardEvent, PointerEvent } from 'react'
 import { OcarinaDiagram } from './components/OcarinaDiagram/OcarinaDiagram'
 import {
   analyzeMidiRangeFit,
@@ -28,6 +28,7 @@ import {
   trimMonophonicLineStart,
 } from './features/midiImport/midiTrackSelection'
 import { useTabPlayback } from './features/playback/useTabPlayback'
+import { midiNoteToFrequency } from './features/playback/playbackMath'
 import { GeneratedTabPanel } from './features/tabViewer/GeneratedTabPanel'
 import type { TabDisplayMode } from './features/tabViewer/GeneratedTabPanel'
 import {
@@ -94,6 +95,9 @@ function cssVariables(
 
 function App() {
   const exportLinkRef = useRef<HTMLAnchorElement>(null)
+  const keyboardAudioContextRef = useRef<AudioContext | undefined>(undefined)
+  const keyboardOscillatorRef = useRef<OscillatorNode | undefined>(undefined)
+  const keyboardGainRef = useRef<GainNode | undefined>(undefined)
   const [activeMidiNote, setActiveMidiNote] = useState(initialMidiNote)
   const [activeStepId, setActiveStepId] = useState<string | undefined>()
   const [parsedMidi, setParsedMidi] = useState<ParsedMidiFile>(() =>
@@ -109,6 +113,7 @@ function App() {
   >()
   const [tabDisplayMode, setTabDisplayMode] = useState<TabDisplayMode>('cards')
   const [hideUnsupportedNotes, setHideUnsupportedNotes] = useState(false)
+  const [auditionNotes, setAuditionNotes] = useState(false)
   const [suggestionDifficulty, setSuggestionDifficulty] =
     useState<SuggestionDifficulty>('easy')
 
@@ -430,6 +435,155 @@ function App() {
     setActiveStepId(step.id)
   }
 
+  function handleKeyboardNoteSelect(midiNote: number) {
+    setActiveMidiNote(midiNote)
+    setActiveStepId(undefined)
+  }
+
+  function handleKeyboardPointerDown(
+    event: PointerEvent<HTMLButtonElement>,
+    midiNote: number,
+  ) {
+    if (event.button !== 0) {
+      return
+    }
+
+    handleKeyboardNoteSelect(midiNote)
+
+    if (auditionNotes) {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      startKeyboardNote(midiNote)
+    }
+  }
+
+  function handleKeyboardKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    midiNote: number,
+  ) {
+    if (!auditionNotes || event.repeat || !isPlayableKeyPress(event.key)) {
+      return
+    }
+
+    event.preventDefault()
+    handleKeyboardNoteSelect(midiNote)
+    startKeyboardNote(midiNote)
+  }
+
+  function handleKeyboardKeyUp(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!auditionNotes || !isPlayableKeyPress(event.key)) {
+      return
+    }
+
+    event.preventDefault()
+    stopKeyboardNote()
+  }
+
+  function handleAuditionToggle() {
+    setAuditionNotes((isEnabled) => {
+      if (isEnabled) {
+        stopKeyboardNote()
+      }
+
+      return !isEnabled
+    })
+  }
+
+  function isPlayableKeyPress(key: string) {
+    return key === 'Enter' || key === ' '
+  }
+
+  function startKeyboardNote(midiNote: number) {
+    const audioContext = getKeyboardAudioContext()
+
+    if (!audioContext) {
+      return
+    }
+
+    stopKeyboardNote({ immediate: true })
+
+    const oscillator = audioContext.createOscillator()
+    const gain = audioContext.createGain()
+    const startTime = audioContext.currentTime
+
+    oscillator.type = 'sine'
+    oscillator.frequency.value = midiNoteToFrequency(midiNote)
+    gain.gain.setValueAtTime(0.0001, startTime)
+    gain.gain.exponentialRampToValueAtTime(0.16, startTime + 0.025)
+    oscillator.connect(gain).connect(audioContext.destination)
+    oscillator.start(startTime)
+    oscillator.onended = () => {
+      if (keyboardOscillatorRef.current === oscillator) {
+        keyboardOscillatorRef.current = undefined
+        keyboardGainRef.current = undefined
+      }
+    }
+
+    keyboardOscillatorRef.current = oscillator
+    keyboardGainRef.current = gain
+  }
+
+  function getKeyboardAudioContext() {
+    if (keyboardAudioContextRef.current) {
+      void keyboardAudioContextRef.current.resume()
+      return keyboardAudioContextRef.current
+    }
+
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as Window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext
+
+    if (!AudioContextConstructor) {
+      return undefined
+    }
+
+    const audioContext = new AudioContextConstructor()
+
+    keyboardAudioContextRef.current = audioContext
+    void audioContext.resume()
+
+    return audioContext
+  }
+
+  function stopKeyboardNote(options: { immediate?: boolean } = {}) {
+    const oscillator = keyboardOscillatorRef.current
+    const gain = keyboardGainRef.current
+
+    if (!oscillator) {
+      return
+    }
+
+    try {
+      if (options.immediate || !gain || !keyboardAudioContextRef.current) {
+        oscillator.stop()
+      } else {
+        const audioContext = keyboardAudioContextRef.current
+        const stopTime = audioContext.currentTime + 0.06
+
+        gain.gain.cancelScheduledValues(audioContext.currentTime)
+        gain.gain.setValueAtTime(
+          Math.max(gain.gain.value, 0.0001),
+          audioContext.currentTime,
+        )
+        gain.gain.exponentialRampToValueAtTime(0.0001, stopTime)
+        oscillator.stop(stopTime + 0.02)
+      }
+    } catch {
+      // The oscillator may have already ended between rapid key presses.
+    }
+
+    keyboardOscillatorRef.current = undefined
+    keyboardGainRef.current = undefined
+  }
+
+  useEffect(() => {
+    return () => {
+      stopKeyboardNote()
+      void keyboardAudioContextRef.current?.close()
+      keyboardAudioContextRef.current = undefined
+    }
+  }, [])
+
   function handleExportTab() {
     const fileName = `${activeTabDocument.title || 'ocarina-tab'}.ocarina-tab.json`
     const blob = new Blob([serializeTabDocument(activeTabDocument)], {
@@ -551,6 +705,14 @@ function App() {
                 <strong>
                   {playableRange.lowest.noteName} to {playableRange.highest.noteName}
                 </strong>
+                <button
+                  aria-pressed={auditionNotes}
+                  className="note-keyboard-toggle"
+                  onClick={handleAuditionToggle}
+                  type="button"
+                >
+                  Audition
+                </button>
               </div>
 
               <div
@@ -573,10 +735,17 @@ function App() {
                       data-accidental={isAccidental}
                       data-testid={`note-button-${fingering.noteName}`}
                       key={fingering.midiNote}
-                      onClick={() => {
-                        setActiveMidiNote(fingering.midiNote)
-                        setActiveStepId(undefined)
-                      }}
+                      onClick={() => handleKeyboardNoteSelect(fingering.midiNote)}
+                      onKeyDown={(event) =>
+                        handleKeyboardKeyDown(event, fingering.midiNote)
+                      }
+                      onKeyUp={handleKeyboardKeyUp}
+                      onPointerCancel={() => stopKeyboardNote()}
+                      onPointerDown={(event) =>
+                        handleKeyboardPointerDown(event, fingering.midiNote)
+                      }
+                      onPointerLeave={() => stopKeyboardNote()}
+                      onPointerUp={() => stopKeyboardNote()}
                       style={cssVariables({
                         '--key-start': keyStart,
                         '--key-width': isAccidental ? accidentalWidthInWhiteKeys : 1,
