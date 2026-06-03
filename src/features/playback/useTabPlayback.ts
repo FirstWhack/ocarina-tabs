@@ -8,6 +8,8 @@ type UseTabPlaybackOptions = {
   onActiveStepChange: (step: TabStep | undefined) => void
 }
 
+export type UseTabPlaybackResult = ReturnType<typeof useTabPlayback>
+
 export function useTabPlayback({ onActiveStepChange }: UseTabPlaybackOptions) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackSpeed, setPlaybackSpeedState] = useState(defaultPlaybackSpeed)

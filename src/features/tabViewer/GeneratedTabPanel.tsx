@@ -113,6 +113,7 @@ function DiagnosticsPanel({
   monophonicLine: MonophonicMidiLine
 }) {
   const isImported = tabDocument.source.type === 'imported'
+  const isEditor = tabDocument.source.type === 'editor'
 
   return (
     <details className="diagnostics-panel">
@@ -122,9 +123,9 @@ function DiagnosticsPanel({
       </summary>
 
       <div className="midi-readiness" aria-label="MIDI readiness preview">
-        {isImported ? (
+        {isImported || isEditor ? (
           <div className="status-panel">
-            <span>Imported profile</span>
+            <span>{isEditor ? 'Editor profile' : 'Imported profile'}</span>
             <strong>{tabDocument.profileName}</strong>
           </div>
         ) : (
@@ -149,7 +150,7 @@ function DiagnosticsPanel({
           <strong>{formatStepCount(tabDocument.steps)}</strong>
         </div>
 
-        {isImported ? (
+        {isImported || isEditor ? (
           <div className="status-panel">
             <span>Timing</span>
             <strong>{tabDocument.ticksPerQuarter} ticks per beat</strong>

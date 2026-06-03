@@ -19,6 +19,44 @@
   max-width: none;
 }
 
+.app-mode-toggle {
+  justify-self: end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(100px, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.app-mode-toggle button {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.app-mode-toggle button:hover {
+  color: var(--text-h);
+}
+
+.app-mode-toggle button:focus-visible {
+  outline: 3px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+.app-mode-toggle button[aria-pressed='true'] {
+  color: var(--bg);
+  background: var(--accent);
+}
+
 .app-eyebrow {
   margin: 0;
   color: var(--accent);
@@ -156,6 +194,145 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+}
+
+.composer-card {
+  grid-column: 1 / -1;
+  align-content: start;
+  gap: 12px;
+}
+
+.composer-card__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.composer-card__body {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(360px, 1.35fr) minmax(280px, 0.75fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.composer-title-field {
+  align-self: end;
+}
+
+.composer-grid,
+.composer-options {
+  display: grid;
+  gap: 8px;
+}
+
+.composer-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.composer-edit-bar {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.35fr) minmax(180px, 0.38fr) minmax(420px, 1fr);
+  gap: 10px;
+  align-items: end;
+  padding-top: 4px;
+}
+
+.composer-recording {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 10px;
+}
+
+.composer-recording span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.record-button {
+  min-height: 36px;
+  min-width: 132px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border: 1px solid #c43a4d;
+  border-radius: 6px;
+  color: #ffdce2;
+  background: rgba(196, 58, 77, 0.16);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.record-button:hover {
+  border-color: #f06980;
+}
+
+.record-button:focus-visible {
+  outline: 3px solid rgba(240, 105, 128, 0.42);
+  outline-offset: 2px;
+}
+
+.record-button[aria-pressed='true'] {
+  color: #ffffff;
+  background: #c43a4d;
+}
+
+.composer-field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.composer-field--inline {
+  align-self: stretch;
+}
+
+.composer-field span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.composer-field input,
+.composer-field select,
+.composer-field textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  background: var(--bg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.composer-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.composer-field input:focus-visible,
+.composer-field select:focus-visible,
+.composer-field textarea:focus-visible {
+  outline: 3px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+.composer-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: end;
 }
 
 .midi-card[aria-label='MIDI source'] {
@@ -1142,6 +1319,10 @@
     grid-template-columns: 1fr;
   }
 
+  .app-mode-toggle {
+    justify-self: stretch;
+  }
+
   .note-lab,
   .midi-page,
   .midi-readiness,
@@ -1156,6 +1337,10 @@
   }
 
   .midi-page__side,
+  .composer-card,
+  .composer-card__body,
+  .composer-edit-bar,
+  .composer-options,
   .track-picker,
   .track-picker__controls,
   .transpose-control,
@@ -1165,6 +1350,20 @@
 
   .midi-page__side {
     gap: 8px;
+  }
+
+  .composer-card__header,
+  .composer-recording {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .composer-recording {
+    justify-content: start;
+  }
+
+  .composer-edit-actions {
+    justify-content: start;
   }
 
   .midi-page__side .midi-card {
