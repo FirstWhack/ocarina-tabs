@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useReducer,
   useRef,
@@ -20,6 +21,7 @@ import { parseMidiFile } from '../../midi/midiParser'
 import type { ParsedMidiFile } from '../../midi/midiParser'
 import { createTwinkleOcarinaMidiFile } from '../../midi/sampleMidi'
 import { createTabDocumentFromComposer } from '../composer/composerDocument'
+import { parseComposerNoteInput } from '../composer/noteParser'
 import {
   composerReducer,
   createInitialComposerState,
@@ -42,6 +44,10 @@ import {
   trimMonophonicLineStart,
 } from '../midiImport/midiTrackSelection'
 import { useKeyboardAudition } from '../keyboard/useKeyboardAudition'
+import {
+  getPhysicalKeyboardMidiNote,
+  normalizePhysicalKeyboardKey,
+} from '../keyboard/physicalKeyboardMapping'
 import { useTabPlayback } from '../playback/useTabPlayback'
 import type { TabDisplayMode } from '../tabViewer/GeneratedTabPanel'
 import { clampSemitones } from '../../tabs/tabLimits'
@@ -70,6 +76,8 @@ function getCurrentTimeMs() {
 
 export function useOcarinaTabApp() {
   const exportLinkRef = useRef<HTMLAnchorElement>(null)
+  const activePhysicalKeyboardNotesRef = useRef(new Map<string, number>())
+  const soundingPhysicalKeyboardKeyRef = useRef<string | undefined>(undefined)
   const recordedKeyboardNoteRef = useRef<
     { midiNote: number; startMs: number } | undefined
   >(undefined)
@@ -84,6 +92,8 @@ export function useOcarinaTabApp() {
     createInitialComposerState,
   )
   const [composerTextInput, setComposerTextInput] = useState('')
+  const [composerTranspositionSemitones, setComposerTranspositionSemitones] =
+    useState(0)
   const [parsedMidi, setParsedMidi] = useState<ParsedMidiFile>(() =>
     parseMidiFile(createTwinkleOcarinaMidiFile()),
   )
@@ -128,6 +138,19 @@ export function useOcarinaTabApp() {
       ? (midiRangeFit.bestTransposition ??
           midiRangeFit.bestCompatibleTransposition)?.semitones
       : undefined
+  const composerSourceMidiNotes = useMemo(
+    () => composerState.notes.map((note) => note.midiNote),
+    [composerState.notes],
+  )
+  const composerSourceRangeFit = useMemo(
+    () => analyzeMidiRangeFit(profile, composerSourceMidiNotes),
+    [composerSourceMidiNotes],
+  )
+  const suggestedComposerTransposition =
+    composerSourceMidiNotes.length > 0
+      ? (composerSourceRangeFit.bestTransposition ??
+          composerSourceRangeFit.bestCompatibleTransposition)?.semitones
+      : undefined
   const suggestedTracks = useMemo(
     () => getSuggestedTrackSelection(parsedMidi, profile, suggestionDifficulty),
     [parsedMidi, suggestionDifficulty],
@@ -151,8 +174,13 @@ export function useOcarinaTabApp() {
     ],
   )
   const composerTabDocument = useMemo(
-    () => createTabDocumentFromComposer(composerState, profile),
-    [composerState],
+    () =>
+      createTabDocumentFromComposer(
+        composerState,
+        profile,
+        composerTranspositionSemitones,
+      ),
+    [composerState, composerTranspositionSemitones],
   )
   const activeTabDocument =
     appMode === 'composer'
@@ -218,6 +246,93 @@ export function useOcarinaTabApp() {
       }
     },
   })
+
+  useEffect(() => {
+    if (appMode !== 'composer') {
+      clearPhysicalKeyboardState()
+      return
+    }
+
+    function handleDocumentKeyDown(event: globalThis.KeyboardEvent) {
+      const midiNote = getPhysicalKeyboardMidiNote(event.key)
+
+      if (midiNote === undefined || isEditableKeyboardTarget(event.target)) {
+        return
+      }
+
+      const normalizedKey = normalizePhysicalKeyboardKey(event.key)
+
+      event.preventDefault()
+
+      if (
+        event.repeat ||
+        activePhysicalKeyboardNotesRef.current.has(normalizedKey)
+      ) {
+        return
+      }
+
+      activePhysicalKeyboardNotesRef.current.set(normalizedKey, midiNote)
+      handleKeyboardNoteSelect(midiNote)
+
+      if (isComposerRecording) {
+        startComposerRecordedNote(midiNote)
+      }
+
+      if (auditionNotes) {
+        soundingPhysicalKeyboardKeyRef.current = normalizedKey
+        keyboardAudition.startKeyboardNote(midiNote)
+      }
+    }
+
+    function handleDocumentKeyUp(event: globalThis.KeyboardEvent) {
+      const midiNote = getPhysicalKeyboardMidiNote(event.key)
+
+      if (midiNote === undefined || isEditableKeyboardTarget(event.target)) {
+        return
+      }
+
+      const normalizedKey = normalizePhysicalKeyboardKey(event.key)
+
+      event.preventDefault()
+      activePhysicalKeyboardNotesRef.current.delete(normalizedKey)
+
+      if (
+        isComposerRecording &&
+        recordedKeyboardNoteRef.current?.midiNote === midiNote
+      ) {
+        finishComposerRecordedNote(midiNote)
+      }
+
+      if (
+        auditionNotes &&
+        soundingPhysicalKeyboardKeyRef.current === normalizedKey
+      ) {
+        const nextSoundingKey = getLastHeldPhysicalKeyboardKey()
+
+        if (nextSoundingKey) {
+          const nextMidiNote =
+            activePhysicalKeyboardNotesRef.current.get(nextSoundingKey)
+
+          soundingPhysicalKeyboardKeyRef.current = nextSoundingKey
+
+          if (nextMidiNote !== undefined) {
+            keyboardAudition.startKeyboardNote(nextMidiNote)
+          }
+        } else {
+          soundingPhysicalKeyboardKeyRef.current = undefined
+          keyboardAudition.stopKeyboardNote()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleDocumentKeyDown)
+    document.addEventListener('keyup', handleDocumentKeyUp)
+
+    return () => {
+      document.removeEventListener('keydown', handleDocumentKeyDown)
+      document.removeEventListener('keyup', handleDocumentKeyUp)
+    }
+  }, [appMode, auditionNotes, isComposerRecording])
 
   function handleModeChange(nextMode: AppMode) {
     if (nextMode === appMode) {
@@ -401,15 +516,38 @@ export function useOcarinaTabApp() {
   }
 
   function handleUseSuggestedTransposition() {
-    if (suggestedTransposition === undefined) {
+    const nextSuggestedTransposition =
+      appMode === 'composer'
+        ? suggestedComposerTransposition
+        : suggestedTransposition
+
+    if (nextSuggestedTransposition === undefined) {
       return
     }
 
-    applyTransposition(suggestedTransposition)
+    applyTransposition(nextSuggestedTransposition)
   }
 
   function applyTransposition(nextSemitones: number) {
     resetPlaybackForSourceChange()
+
+    if (appMode === 'composer') {
+      const selectedNote =
+        composerState.notes.find((note) => note.id === activeStepId) ??
+        composerState.notes.find(
+          (note) => note.id === composerState.selectedNoteId,
+        ) ??
+        composerState.notes[0]
+
+      setComposerTranspositionSemitones(nextSemitones)
+      setActiveMidiNote(
+        selectedNote
+          ? selectedNote.midiNote + nextSemitones
+          : initialMidiNote + nextSemitones,
+      )
+      return
+    }
+
     if (importedTabDocument) {
       const nextDocument = transposeTabDocument(
         profile,
@@ -459,13 +597,22 @@ export function useOcarinaTabApp() {
   }
 
   function handleComposerTextSubmit() {
+    const parsed = parseComposerNoteInput(composerTextInput, profile)
+
     dispatchComposer({
       type: 'append-text-notes',
       input: composerTextInput,
       profile,
     })
 
-    setComposerTextInput('')
+    if (parsed.valid) {
+      setComposerTextInput('')
+      setActiveMidiNote(
+        (parsed.midiNotes.at(-1) ?? initialMidiNote) +
+          composerTranspositionSemitones,
+      )
+    }
+
     resetPlaybackForSourceChange()
   }
 
@@ -511,6 +658,7 @@ export function useOcarinaTabApp() {
   function handleComposerClear() {
     dispatchComposer({ type: 'clear' })
     setComposerTextInput('')
+    setComposerTranspositionSemitones(0)
     resetPlaybackForSourceChange()
     setActiveMidiNote(initialMidiNote)
   }
@@ -642,6 +790,7 @@ export function useOcarinaTabApp() {
     setAuditionNotes((isEnabled) => {
       if (isEnabled) {
         keyboardAudition.stopKeyboardNote()
+        soundingPhysicalKeyboardKeyRef.current = undefined
       }
 
       return !isEnabled
@@ -652,9 +801,38 @@ export function useOcarinaTabApp() {
     return key === 'Enter' || key === ' '
   }
 
+  function getLastHeldPhysicalKeyboardKey() {
+    return [...activePhysicalKeyboardNotesRef.current.keys()].at(-1)
+  }
+
+  function clearPhysicalKeyboardState() {
+    activePhysicalKeyboardNotesRef.current.clear()
+    soundingPhysicalKeyboardKeyRef.current = undefined
+    keyboardAudition.stopKeyboardNote()
+  }
+
+  function isEditableKeyboardTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) {
+      return false
+    }
+
+    const input = target.closest('input')
+
+    if (input instanceof HTMLInputElement) {
+      return !['button', 'checkbox', 'radio', 'reset', 'submit'].includes(
+        input.type,
+      )
+    }
+
+    return Boolean(
+      target.closest('textarea, select, [contenteditable="true"]'),
+    )
+  }
+
   function handleExportTab() {
+    const exportDocument = getExportTabDocument()
     const fileName = `${activeTabDocument.title || 'ocarina-tab'}.ocarina-tab.json`
-    const blob = new Blob([serializeTabDocument(activeTabDocument)], {
+    const blob = new Blob([serializeTabDocument(exportDocument)], {
       type: 'application/json',
     })
     const url = URL.createObjectURL(blob)
@@ -667,6 +845,18 @@ export function useOcarinaTabApp() {
 
     window.setTimeout(() => URL.revokeObjectURL(url), 0)
     setTabFileMessage(`Exported ${fileName}`)
+  }
+
+  function getExportTabDocument() {
+    if (appMode !== 'composer' || composerTranspositionSemitones === 0) {
+      return activeTabDocument
+    }
+
+    return window.confirm(
+      'Export the currently transposed score? Choose OK to save the transposed notes, or Cancel to save the original pitches.',
+    )
+      ? activeTabDocument
+      : createTabDocumentFromComposer(composerState, profile, 0)
   }
 
   function resetPlaybackForSourceChange() {
@@ -706,6 +896,8 @@ export function useOcarinaTabApp() {
       composerState,
       composerTextInput,
       composerTabDocument,
+      composerTranspositionSemitones,
+      suggestedComposerTransposition,
       isComposerRecording,
       activeMidiNote,
     },

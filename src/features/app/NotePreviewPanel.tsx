@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { OcarinaDiagram } from '../../components/OcarinaDiagram/OcarinaDiagram'
 import type {
@@ -17,6 +18,7 @@ import {
   getKeyboardLayoutMetrics,
   isAccidentalNote,
 } from '../keyboard/noteKeyboardLayout'
+import { getPhysicalKeyboardKeyLabel } from '../keyboard/physicalKeyboardMapping'
 
 type NotePreviewPanelProps = {
   profile: OcarinaProfile
@@ -24,6 +26,8 @@ type NotePreviewPanelProps = {
   activeFingering: OcarinaFingering | undefined
   playableRange: PlayableRange
   activeTabDocument: TabDocument
+  compactMode?: boolean
+  defaultCollapsed?: boolean
   playableDurationMs: number
   playback: UseTabPlaybackResult
   auditionNotes: boolean
@@ -53,6 +57,8 @@ export function NotePreviewPanel({
   activeFingering,
   playableRange,
   activeTabDocument,
+  compactMode = false,
+  defaultCollapsed = false,
   playableDurationMs,
   playback,
   auditionNotes,
@@ -67,9 +73,14 @@ export function NotePreviewPanel({
   onKeyboardPointerUp,
 }: NotePreviewPanelProps) {
   const keyboardLayout = getKeyboardLayoutMetrics(profile)
+  const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(defaultCollapsed)
 
   return (
-    <div className="note-lab__diagram-panel">
+    <div
+      className="note-lab__diagram-panel"
+      data-compact={compactMode}
+      data-collapsed={isPreviewCollapsed}
+    >
       <div className="note-lab__selected">
         <span>Preview note</span>
         <strong data-testid="active-note">
@@ -79,32 +90,50 @@ export function NotePreviewPanel({
         </strong>
       </div>
 
-      <div className="note-lab__diagram" data-testid="active-ocarina-diagram">
-        <OcarinaDiagram
-          filledHoles={activeFingering?.filledHoles ?? []}
-          title={
-            activeFingering
-              ? `${activeFingering.noteName} fingering`
-              : `Unsupported MIDI ${activeMidiNote}`
-          }
-        />
-      </div>
+      {isPreviewCollapsed ? null : (
+        <div className="note-lab__diagram" data-testid="active-ocarina-diagram">
+          <OcarinaDiagram
+            filledHoles={activeFingering?.filledHoles ?? []}
+            title={
+              activeFingering
+                ? `${activeFingering.noteName} fingering`
+                : `Unsupported MIDI ${activeMidiNote}`
+            }
+          />
+        </div>
+      )}
 
       <div className="preview-actions">
         <button
-          className="action-button action-button--primary"
-          onClick={() =>
-            playback.toggle(activeTabDocument.steps, playableDurationMs)
-          }
+          className="action-button"
+          onClick={() => setIsPreviewCollapsed((isCollapsed) => !isCollapsed)}
           type="button"
         >
-          {playback.isPlaying ? 'Pause tab' : 'Play tab'}
+          {isPreviewCollapsed ? 'Show diagram' : 'Hide diagram'}
         </button>
-        <button className="action-button" onClick={onPreviewSample} type="button">
-          Preview sample
-        </button>
+        {compactMode && isPreviewCollapsed ? null : (
+          <>
+            <button
+              className="action-button action-button--primary"
+              onClick={() =>
+                playback.toggle(activeTabDocument.steps, playableDurationMs)
+              }
+              type="button"
+            >
+              {playback.isPlaying ? 'Pause tab' : 'Play tab'}
+            </button>
+            <button
+              className="action-button"
+              onClick={onPreviewSample}
+              type="button"
+            >
+              Preview sample
+            </button>
+          </>
+        )}
       </div>
 
+      {compactMode && isPreviewCollapsed ? null : (
       <div className="playback-controls" aria-label="Playback controls">
         <label className="playback-slider">
           <span>Position</span>
@@ -149,6 +178,7 @@ export function NotePreviewPanel({
           <strong>{formatPlaybackSpeed(playback.playbackSpeed)}</strong>
         </label>
       </div>
+      )}
 
       <section className="profile-strip" aria-label="Ocarina profile">
         <div className="note-lab__range">
@@ -175,6 +205,9 @@ export function NotePreviewPanel({
         >
           {profile.fingerings.map((fingering) => {
             const isAccidental = isAccidentalNote(fingering.noteName)
+            const physicalKeyLabel = getPhysicalKeyboardKeyLabel(
+              fingering.midiNote,
+            )
 
             return (
               <button
@@ -200,13 +233,20 @@ export function NotePreviewPanel({
                 )}
                 title={
                   fingering.aliases.length > 0
-                    ? `${fingering.noteName} / ${fingering.aliases.join(', ')}`
-                    : fingering.noteName
+                    ? `${fingering.noteName} / ${fingering.aliases.join(', ')}${
+                        physicalKeyLabel ? ` / Key ${physicalKeyLabel}` : ''
+                      }`
+                    : `${fingering.noteName}${
+                        physicalKeyLabel ? ` / Key ${physicalKeyLabel}` : ''
+                      }`
                 }
                 type="button"
               >
                 <span>{fingering.noteName}</span>
-                <small>MIDI {fingering.midiNote}</small>
+                <small>
+                  {physicalKeyLabel ? `${physicalKeyLabel} / ` : null}
+                  MIDI {fingering.midiNote}
+                </small>
               </button>
             )
           })}

@@ -25,10 +25,15 @@ export type ComposerState = {
   defaultDurationTicks: number
   quantizeTicks: number
   nextNoteNumber: number
-  parseError: string | undefined
+  noteInputMessage: ComposerMessage | undefined
 }
 
 export type ComposerInsertPosition = 'end' | 'before-selected' | 'after-selected'
+
+export type ComposerMessage = {
+  severity: 'error' | 'warning'
+  text: string
+}
 
 export type ComposerAction =
   | {
@@ -80,4 +85,8 @@ export type ComposerAction =
   | {
       type: 'set-parse-error'
       parseError: string | undefined
+    }
+  | {
+      type: 'set-note-input-message'
+      message: ComposerMessage | undefined
     }

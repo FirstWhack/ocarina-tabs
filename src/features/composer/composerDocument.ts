@@ -11,6 +11,7 @@ import type { ComposerDraftNote, ComposerState } from './composerTypes'
 export function createTabDocumentFromComposer(
   state: ComposerState,
   profile: OcarinaProfile,
+  transpositionSemitones = 0,
 ): TabDocument {
   return {
     schemaVersion: tabDocumentSchemaVersion,
@@ -20,20 +21,31 @@ export function createTabDocumentFromComposer(
     profileName: profile.name,
     tuning: profile.tuning,
     ticksPerQuarter: composerTicksPerQuarter,
-    transpositionSemitones: 0,
+    transpositionSemitones,
     source: { type: 'editor' },
-    steps: createTabStepsFromComposerNotes(state.notes, profile),
+    steps: createTabStepsFromComposerNotes(
+      state.notes,
+      profile,
+      transpositionSemitones,
+    ),
   }
 }
 
 export function createTabStepsFromComposerNotes(
   notes: readonly ComposerDraftNote[],
   profile: OcarinaProfile,
+  transpositionSemitones = 0,
 ): readonly TabStep[] {
   let startTick = 0
 
   return notes.map((note, index) => {
-    const step = createTabStep(note, profile, index, startTick)
+    const step = createTabStep(
+      note,
+      profile,
+      index,
+      startTick,
+      transpositionSemitones,
+    )
     startTick += note.durationTicks
     return step
   })
@@ -44,21 +56,23 @@ function createTabStep(
   profile: OcarinaProfile,
   index: number,
   startTick: number,
+  transpositionSemitones: number,
 ): TabStep {
   const startMs = ticksToMilliseconds(startTick)
   const durationMs = ticksToMilliseconds(note.durationTicks)
+  const midiNote = note.midiNote + transpositionSemitones
 
   return {
     id: note.id,
     index,
     sourceMidiNote: note.midiNote,
-    midiNote: note.midiNote,
+    midiNote,
     velocity: 88,
     startTick,
     durationTicks: note.durationTicks,
     startMs,
     durationMs,
-    fingering: getFingeringForMidiNote(profile, note.midiNote),
+    fingering: getFingeringForMidiNote(profile, midiNote),
   }
 }
 

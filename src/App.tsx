@@ -22,6 +22,8 @@ function App() {
             activeFingering={app.activeFingering}
             activeMidiNote={app.activeMidiNote}
             activeTabDocument={app.activeTabDocument}
+            compactMode={app.appMode === 'composer'}
+            defaultCollapsed={app.appMode === 'composer'}
             auditionNotes={app.auditionNotes}
             onAuditionToggle={app.actions.handleAuditionToggle}
             onKeyboardKeyDown={app.actions.handleKeyboardKeyDown}
@@ -81,6 +83,9 @@ function App() {
                 composerState={app.composerState.composerState}
                 composerTabDocument={app.composerState.composerTabDocument}
                 composerTextInput={app.composerState.composerTextInput}
+                composerTranspositionSemitones={
+                  app.composerState.composerTranspositionSemitones
+                }
                 dispatchComposer={app.actions.dispatchComposer}
                 exportLinkRef={app.refs.exportLinkRef}
                 isComposerRecording={app.composerState.isComposerRecording}
@@ -103,8 +108,20 @@ function App() {
                 }
                 onComposerTextSubmit={app.actions.handleComposerTextSubmit}
                 onExportTab={app.actions.handleExportTab}
+                onTranspose={app.actions.handleTranspose}
+                onTranspositionInputChange={
+                  app.actions.handleTranspositionInputChange
+                }
+                onUseSuggestedTransposition={
+                  app.actions.handleUseSuggestedTransposition
+                }
+                playback={app.playback}
+                playableDurationMs={app.playableDurationMs}
                 profile={app.profile}
                 setComposerTextInput={app.actions.setComposerTextInput}
+                suggestedComposerTransposition={
+                  app.composerState.suggestedComposerTransposition
+                }
               />
             )}
           </div>

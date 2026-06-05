@@ -17,7 +17,7 @@ export function createInitialComposerState(): ComposerState {
     defaultDurationTicks: defaultComposerDurationTicks,
     quantizeTicks: defaultComposerQuantizeTicks,
     nextNoteNumber: 1,
-    parseError: undefined,
+    noteInputMessage: undefined,
   }
 }
 
@@ -72,17 +72,36 @@ export function composerReducer(
       const parsed = parseComposerNoteInput(action.input, action.profile)
 
       if (!parsed.valid) {
-        return { ...state, parseError: parsed.error }
+        return {
+          ...state,
+          noteInputMessage: { severity: 'error', text: parsed.error },
+        }
       }
 
-      return addNotes(state, parsed.midiNotes, 'end', state.defaultDurationTicks)
+      return addNotes(
+        state,
+        parsed.midiNotes,
+        'end',
+        state.defaultDurationTicks,
+        parsed.warning
+          ? { severity: 'warning', text: parsed.warning }
+          : undefined,
+      )
     }
 
     case 'clear':
       return createInitialComposerState()
 
     case 'set-parse-error':
-      return { ...state, parseError: action.parseError }
+      return {
+        ...state,
+        noteInputMessage: action.parseError
+          ? { severity: 'error', text: action.parseError }
+          : undefined,
+      }
+
+    case 'set-note-input-message':
+      return { ...state, noteInputMessage: action.message }
   }
 }
 
@@ -103,6 +122,7 @@ function addNotes(
   midiNotes: readonly number[],
   position: 'end' | 'before-selected' | 'after-selected',
   durationTicks = state.defaultDurationTicks,
+  noteInputMessage: ComposerState['noteInputMessage'] = undefined,
 ): ComposerState {
   const insertIndex = getInsertIndex(state, position)
   const safeDurationTicks = normalizeDuration(durationTicks, state)
@@ -125,7 +145,7 @@ function addNotes(
     notes,
     selectedNoteId,
     nextNoteNumber: state.nextNoteNumber + newNotes.length,
-    parseError: undefined,
+    noteInputMessage,
   }
 }
 
@@ -150,7 +170,7 @@ function deleteSelectedNote(state: ComposerState): ComposerState {
     ...state,
     notes,
     selectedNoteId: nextSelectedNote?.id,
-    parseError: undefined,
+    noteInputMessage: undefined,
   }
 }
 
@@ -167,7 +187,7 @@ function updateSelectedNote(
     notes: state.notes.map((note) =>
       note.id === state.selectedNoteId ? { ...note, ...patch } : note,
     ),
-    parseError: undefined,
+    noteInputMessage: undefined,
   }
 }
 
